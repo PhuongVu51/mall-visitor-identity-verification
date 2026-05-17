@@ -33,29 +33,32 @@ function makeDid(address: string) {
 }
 
 export default function Home() {
-  // --- STATE TỪ CẢ 2 BẠN ---
+  // --- STATES ---
   const [walletAddress, setWalletAddress] = useState("");
   const [networkLabel, setNetworkLabel] = useState("Not connected");
   const [statusMessage, setStatusMessage] = useState(
     "Connect MetaMask to start the visitor identity flow."
   );
 
-  // Logic Tech của Phương
   const [contract, setContract] = useState<any>(null);
   const [identity, setIdentity] = useState("");
   const [searchAddress, setSearchAddress] = useState("");
   const [resultHash, setResultHash] = useState("");
   const [resultTimestamp, setResultTimestamp] = useState("");
+  const [resultVerified, setResultVerified] = useState<boolean | null>(null);
+  
+  // STATE MỚI: Lưu địa chỉ Admin lấy từ Blockchain
+  const [adminAddress, setAdminAddress] = useState(""); 
 
-  const contractAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
+  // CONTRACT ADDRESS 
+  const contractAddress = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
 
-  // --- EFFECT (UI của bạn kia) ---
+  // --- EFFECT ---
   useEffect(() => {
     const savedWallet = window.localStorage.getItem("lotte_wallet_address");
     const savedNetwork = window.localStorage.getItem("lotte_network_label");
 
     if (savedWallet) {
-      // NOTE: Bạn có thể tự động gọi lại connectWallet ở đây nếu muốn
       setWalletAddress(savedWallet);
       setStatusMessage(`Wallet loaded from cache. Please Connect again to sync Contract.`);
     }
@@ -65,7 +68,7 @@ export default function Home() {
     }
   }, []);
 
-  // --- LOGIC: CONNECT WALLET (Đã gộp của Phương & Bạn kia) ---
+  // --- LOGIC: CONNECT WALLET ---
   async function connectWallet() {
     try {
       if (!window.ethereum) {
@@ -73,7 +76,6 @@ export default function Home() {
         return;
       }
 
-      // Khởi tạo Ethers (Code của Phương)
       const provider = new ethers.BrowserProvider(window.ethereum as any);
       const accounts = await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
@@ -86,12 +88,18 @@ export default function Home() {
 
       const selectedAccount = accounts[0];
 
-      // Cập nhật State
       setWalletAddress(selectedAccount);
       setContract(deployedContract);
       window.localStorage.setItem("lotte_wallet_address", selectedAccount);
 
-      // Cập nhật Network Label (Code của bạn kia nhưng dùng Ethers)
+      // LẤY ĐỊA CHỈ ADMIN TỪ SMART CONTRACT
+      try {
+        const adminWallet = await deployedContract.admin();
+        setAdminAddress(adminWallet.toLowerCase());
+      } catch (err) {
+        console.error("Could not fetch admin:", err);
+      }
+
       try {
         const network = await provider.getNetwork();
         const chainIdHex = "0x" + network.chainId.toString(16);
@@ -116,7 +124,7 @@ export default function Home() {
     }
   }
 
-  // --- LOGIC: REGISTER IDENTITY (Của Phương) ---
+  // --- LOGIC: REGISTER IDENTITY ---
   async function registerIdentity() {
     try {
       if (!contract) {
@@ -129,13 +137,12 @@ export default function Home() {
       }
 
       const identityHash = "0x" + CryptoJS.SHA256(identity).toString();
-      console.log("Generated Hash:", identityHash);
-
+      
       const tx = await contract.registerIdentity(identityHash);
       setStatusMessage("⏳ Waiting for transaction...");
       await tx.wait();
 
-      setStatusMessage("✅ Identity registered successfully");
+      setStatusMessage("✅ Identity registered successfully! Waiting for Admin approval.");
       setIdentity("");
     } catch (err: any) {
       console.error(err);
@@ -143,7 +150,7 @@ export default function Home() {
     }
   }
 
-  // --- LOGIC: FETCH IDENTITY (Của Phương) ---
+  // --- LOGIC: FETCH IDENTITY ---
   async function fetchIdentity() {
     try {
       if (!contract) {
@@ -161,19 +168,21 @@ export default function Home() {
 
       setResultHash("");
       setResultTimestamp("");
+      setResultVerified(null);
 
       const data = await contract.getIdentity(searchAddress);
-      console.log("Blockchain Data:", data);
 
       const hash = data[0];
       const timestamp = Number(data[1]);
+      const verified = data[2];
 
       if (!hash || hash === "" || timestamp === 0) {
-        setStatusMessage("❌ No identity found");
+        setStatusMessage("❌ No identity found for this address.");
         return;
       }
 
       setResultHash(hash);
+      setResultVerified(verified);
       const date = new Date(timestamp * 1000);
       setResultTimestamp(date.toLocaleString());
 
@@ -184,16 +193,36 @@ export default function Home() {
     }
   }
 
-  // --- UI GIAO DIỆN CHÍNH ---
+  // --- LOGIC: ADMIN APPROVE IDENTITY ---
+  async function approveIdentity() {
+    try {
+      if (!contract) {
+        setStatusMessage("❌ Contract not loaded.");
+        return;
+      }
+      
+      setStatusMessage("⏳ Admin is approving identity on blockchain...");
+      const tx = await contract.verifyIdentity(searchAddress);
+      await tx.wait();
+      
+      setStatusMessage("✅ Identity verified successfully!");
+      await fetchIdentity();
+    } catch (err: any) {
+      console.error(err);
+      setStatusMessage("❌ Admin action failed: " + (err.reason || err.message));
+    }
+  }
+
+  // KIỂM TRA QUYỀN ADMIN (So sánh ví đang kết nối với ví Admin lấy từ contract)
+  const isAdminConnected = walletAddress.toLowerCase() === adminAddress;
+
   return (
     <main className="min-h-screen bg-[#fff8f6] text-[#151515]">
-      {/* HEADER & HERO SECTION */}
       <section className="relative overflow-hidden bg-gradient-to-br from-white via-[#fff4f1] to-[#ffe1dc]">
         <div className="absolute left-[-160px] top-[-160px] h-[420px] w-[420px] rounded-full bg-[#E30613]/20 blur-3xl" />
         <div className="absolute bottom-[-180px] right-[-120px] h-[480px] w-[480px] rounded-full bg-[#E30613]/25 blur-3xl" />
         
         <div className="relative mx-auto max-w-7xl px-6 py-7">
-          {/* NAV BAR */}
           <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <div className="flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200">
@@ -228,7 +257,6 @@ export default function Home() {
             </div>
           </nav>
 
-          {/* HERO CONTENT */}
           <div className="grid gap-12 pb-20 pt-20 lg:grid-cols-[1.08fr_0.92fr] lg:items-center">
             <div>
               <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm backdrop-blur">
@@ -239,10 +267,9 @@ export default function Home() {
                 One visitor identity for <span className="text-[#E30613]">mall-wide verification.</span>
               </h2>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-neutral-700 md:text-xl md:leading-9">
-                A Web3 identity verification prototype for Lotte Mall West Lake, allowing visitors to prove verification status across parking, event desks, cinema counters, and merchants.
+                A Web3 identity verification prototype for Lotte Mall West Lake, kết hợp giữa mã hóa bảo mật thông tin và phân quyền xác thực minh bạch.
               </p>
 
-              {/* KHU VỰC THÔNG BÁO STATUS */}
               <div className="mt-9 max-w-2xl rounded-[1.75rem] border border-red-100 bg-white/80 p-5 shadow-sm backdrop-blur">
                 <p className="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">
                   Current system status
@@ -253,7 +280,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* VISITOR DID CARD */}
             <div className="relative">
               <div className="relative overflow-hidden rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-2xl shadow-red-100">
                 <div className="rounded-[2rem] bg-gradient-to-br from-[#E30613] via-[#ce0010] to-[#790006] p-7 text-white">
@@ -275,6 +301,7 @@ export default function Home() {
                     <IdentityRow label="Wallet Address" value={shortenAddress(walletAddress)} />
                     <IdentityRow label="Visitor DID" value={makeDid(walletAddress)} />
                     <IdentityRow label="Network" value={networkLabel} />
+                    <IdentityRow label="Role" value={isAdminConnected ? "Admin" : (walletAddress ? "Visitor" : "None")} />
                   </div>
                 </div>
               </div>
@@ -283,15 +310,13 @@ export default function Home() {
         </div>
       </section>
 
-      {/* KHU VỰC FORM LOGIC CỦA PHƯƠNG (Tích hợp giao diện mới) */}
       <section className="mx-auto max-w-7xl px-6 py-10">
         <div className="mb-8 text-center">
            <h2 className="text-3xl font-black tracking-tight">Interactive Smart Contract Demo</h2>
-           <p className="mt-2 text-neutral-600">Test the on-chain register and verify functions directly.</p>
+           <p className="mt-2 text-neutral-600">Kiểm tra luồng đăng ký và phê duyệt danh tính.</p>
         </div>
 
         <div className="grid gap-8 md:grid-cols-2">
-          {/* CỘT ĐĂNG KÝ */}
           <div className="rounded-[2rem] border border-red-100 bg-white p-8 shadow-sm">
             <h3 className="mb-6 text-xl font-black text-[#E30613]">1. Register Identity</h3>
             <input
@@ -309,9 +334,8 @@ export default function Home() {
             </button>
           </div>
 
-          {/* CỘT TÌM KIẾM */}
           <div className="rounded-[2rem] border border-red-100 bg-white p-8 shadow-sm">
-            <h3 className="mb-6 text-xl font-black text-[#E30613]">2. Verify On-Chain</h3>
+            <h3 className="mb-6 text-xl font-black text-[#E30613]">2. Verify & Approve On-Chain</h3>
             <input
               type="text"
               placeholder="Enter Wallet Address (0x...)"
@@ -323,54 +347,45 @@ export default function Home() {
               onClick={fetchIdentity}
               className="mt-4 w-full rounded-xl bg-[#111] py-4 text-sm font-black text-white transition hover:bg-[#E30613]"
             >
-              Fetch & Verify Identity
+              Fetch Identity Data
             </button>
 
-            {/* KẾT QUẢ TÌM KIẾM */}
             {resultHash && (
-              <div className="mt-6 rounded-2xl bg-[#fff4f1] p-5">
+              <div className="mt-6 rounded-2xl bg-[#fff4f1] p-5 border border-red-100">
                 <p className="text-xs font-black uppercase tracking-[0.2em] text-[#E30613]">On-Chain Hash:</p>
-                <p className="mt-1 break-all text-sm font-bold">{resultHash}</p>
+                <p className="break-all text-sm font-bold mt-1">{resultHash}</p>
+                
                 <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-[#E30613]">Timestamp:</p>
-                <p className="mt-1 text-sm font-bold">{resultTimestamp}</p>
+                <p className="text-sm font-bold mt-1">{resultTimestamp}</p>
+
+                <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-[#E30613]">Verification Status:</p>
+                <p className={`text-base font-black mt-1 ${resultVerified ? "text-green-600" : "text-amber-500"}`}>
+                  {resultVerified ? "Verified ✅" : "Pending Approval ⏳"}
+                </p>
+
+                {/* LOGIC ĐIỀU KIỆN: Chỉ hiện nút Approve khi CHƯA duyệt VÀ người dùng đang kết nối là ADMIN */}
+                {!resultVerified && isAdminConnected && (
+                  <button
+                    onClick={approveIdentity}
+                    className="mt-5 w-full rounded-xl bg-red-600 py-3 text-sm font-black text-white transition hover:bg-red-700 shadow-md shadow-red-200"
+                  >
+                    Approve Identity
+                  </button>
+                )}
               </div>
             )}
           </div>
         </div>
       </section>
-      
-      {/* CÁC PHẦN GIỚI THIỆU KHÁC CỦA BẠN KIA */}
-      <section className="mx-auto max-w-7xl px-6 py-14">
-        <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-          <ModuleCard href="/visitor" eyebrow="Visitor" title="DID Wallet" description="Displays wallet address, DID, identity hash..." icon="🪪" />
-          <ModuleCard href="/admin" eyebrow="Lotte Admin" title="Register Identity" description="Creates a visitor identity hash..." icon="🏢" />
-          <ModuleCard href="/verify" eyebrow="Merchant" title="Verify Visitor" description="Checks visitor DID or wallet address..." icon="✅" />
-          <ModuleCard href="/transactions" eyebrow="Blockchain" title="Transaction Log" description="Shows audit trail actions." icon="⛓️" />
-        </div>
-      </section>
-
     </main>
   );
 }
 
-// --- SUB-COMPONENTS CỦA GIAO DIỆN ---
 function IdentityRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
       <p className="text-xs font-black uppercase tracking-[0.24em] text-white/45">{label}</p>
       <p className="mt-1 break-all text-sm font-bold text-white">{value}</p>
     </div>
-  );
-}
-
-function ModuleCard({ href, eyebrow, title, description, icon }: { href: string; eyebrow: string; title: string; description: string; icon: string; }) {
-  return (
-    <Link href={href} className="group rounded-[2rem] border border-red-100 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:border-[#E30613] hover:shadow-2xl">
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#fff4f1] text-2xl transition group-hover:bg-[#E30613]">{icon}</div>
-      <p className="mt-6 text-xs font-black uppercase tracking-[0.28em] text-[#E30613]">{eyebrow}</p>
-      <h3 className="mt-3 text-2xl font-black tracking-tight">{title}</h3>
-      <p className="mt-3 leading-7 text-neutral-600">{description}</p>
-      <p className="mt-6 font-black text-[#E30613]">Open module →</p>
-    </Link>
   );
 }

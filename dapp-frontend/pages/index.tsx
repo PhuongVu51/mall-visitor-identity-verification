@@ -46,12 +46,12 @@ export default function Home() {
   const [resultHash, setResultHash] = useState("");
   const [resultTimestamp, setResultTimestamp] = useState("");
   const [resultVerified, setResultVerified] = useState<boolean | null>(null);
+  const [resultRevoked, setResultRevoked] = useState<boolean | null>(null); // STATE MỚI: Bắt trạng thái Revoked
   
-  // STATE MỚI: Lưu địa chỉ Admin lấy từ Blockchain
   const [adminAddress, setAdminAddress] = useState(""); 
 
   // CONTRACT ADDRESS 
-  const contractAddress = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
+  const contractAddress = "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853";
 
   // --- EFFECT ---
   useEffect(() => {
@@ -92,7 +92,6 @@ export default function Home() {
       setContract(deployedContract);
       window.localStorage.setItem("lotte_wallet_address", selectedAccount);
 
-      // LẤY ĐỊA CHỈ ADMIN TỪ SMART CONTRACT
       try {
         const adminWallet = await deployedContract.admin();
         setAdminAddress(adminWallet.toLowerCase());
@@ -169,12 +168,15 @@ export default function Home() {
       setResultHash("");
       setResultTimestamp("");
       setResultVerified(null);
+      setResultRevoked(null); // Reset state
 
+      // LẤY DỮ LIỆU TỪ BLOCKCHAIN: Lấy đủ 4 tham số
       const data = await contract.getIdentity(searchAddress);
 
       const hash = data[0];
       const timestamp = Number(data[1]);
       const verified = data[2];
+      const revoked = data[3]; // CHÍNH LÀ NÓ: Bắt cờ Revoked từ mạng lưới
 
       if (!hash || hash === "" || timestamp === 0) {
         setStatusMessage("❌ No identity found for this address.");
@@ -183,6 +185,7 @@ export default function Home() {
 
       setResultHash(hash);
       setResultVerified(verified);
+      setResultRevoked(revoked); // Đẩy vào State
       const date = new Date(timestamp * 1000);
       setResultTimestamp(date.toLocaleString());
 
@@ -213,7 +216,6 @@ export default function Home() {
     }
   }
 
-  // KIỂM TRA QUYỀN ADMIN (So sánh ví đang kết nối với ví Admin lấy từ contract)
   const isAdminConnected = walletAddress.toLowerCase() === adminAddress;
 
   return (
@@ -359,12 +361,13 @@ export default function Home() {
                 <p className="text-sm font-bold mt-1">{resultTimestamp}</p>
 
                 <p className="mt-4 text-xs font-black uppercase tracking-[0.2em] text-[#E30613]">Verification Status:</p>
-                <p className={`text-base font-black mt-1 ${resultVerified ? "text-green-600" : "text-amber-500"}`}>
-                  {resultVerified ? "Verified ✅" : "Pending Approval ⏳"}
+                {/* LOGIC MỚI: Ưu tiên bắt cờ Revoked đầu tiên */}
+                <p className={`text-base font-black mt-1 ${resultRevoked ? "text-red-600" : resultVerified ? "text-green-600" : "text-amber-500"}`}>
+                  {resultRevoked ? "Revoked ❌" : resultVerified ? "Verified ✅" : "Pending Approval ⏳"}
                 </p>
 
-                {/* LOGIC ĐIỀU KIỆN: Chỉ hiện nút Approve khi CHƯA duyệt VÀ người dùng đang kết nối là ADMIN */}
-                {!resultVerified && isAdminConnected && (
+                {/* LOGIC ĐIỀU KIỆN: Ẩn nút Approve đi nếu tài khoản ĐÃ BỊ THU HỒI */}
+                {!resultVerified && !resultRevoked && isAdminConnected && (
                   <button
                     onClick={approveIdentity}
                     className="mt-5 w-full rounded-xl bg-red-600 py-3 text-sm font-black text-white transition hover:bg-red-700 shadow-md shadow-red-200"

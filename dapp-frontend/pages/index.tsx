@@ -1,108 +1,281 @@
+"use client";
 
-"use client"; // Ensures this runs on the client side
-
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ethers } from "ethers";
+import CryptoJS from "crypto-js";
 import contractABI from "../constants/contractABI.json";
 
 export default function Home() {
-  const [identityHash, setIdentityHash] = useState<string>("");
-  const [status, setStatus] = useState<string>("");
+  const [identity, setIdentity] = useState("");
+  const [status, setStatus] = useState("");
+  const [account, setAccount] = useState("");
   const [contract, setContract] = useState<any>(null);
-  const [account, setAccount] = useState<string | null>(null);
 
-  // ✅ Updated Contract Address (Replace old address)
-  const contractAddress = "0xCd49D37c12Bc58685388Ff9BE721Ab5700E02908";
+  // SEARCH STATES
+  const [searchAddress, setSearchAddress] = useState("");
+  const [resultHash, setResultHash] = useState("");
+  const [resultTimestamp, setResultTimestamp] =
+    useState("");
 
-  useEffect(() => {
-    async function initializeContract() {
-      if (typeof window.ethereum !== "undefined") {
-        try {
-          const provider = new ethers.BrowserProvider(window.ethereum);
-          const signer = await provider.getSigner();
-          const deployedContract = new ethers.Contract(contractAddress, contractABI.abi, signer);
-          setContract(deployedContract);
-          console.log("✅ Contract Loaded:", deployedContract);
-        } catch (error) {
-          console.error("❌ Error initializing contract:", error);
-          setStatus("❌ Error initializing contract.");
-        }
-      } else {
-        setStatus("❌ MetaMask not detected.");
-      }
-    }
+  // CONTRACT ADDRESS (Dán địa chỉ mới sau khi chạy lệnh deploy vào đây)
+  const contractAddress =
+    "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
 
-    initializeContract();
-  }, []);
-
+  // CONNECT WALLET
   async function connectWallet() {
     try {
-      if (!window.ethereum) throw new Error("MetaMask is required");
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const accounts = await provider.send("eth_requestAccounts", []);
+      if (!window.ethereum) {
+        setStatus("❌ MetaMask not detected");
+        return;
+      }
+
+      const provider =
+        new ethers.BrowserProvider(
+          window.ethereum
+        );
+
+      const accounts = await provider.send(
+        "eth_requestAccounts",
+        []
+      );
+
+      const signer =
+        await provider.getSigner();
+
+      const deployedContract =
+        new ethers.Contract(
+          contractAddress,
+          contractABI.abi,
+          signer
+        );
+
       setAccount(accounts[0]);
-      setStatus(`✅ Wallet connected: ${accounts[0]}`);
-    } catch (error) {
-      console.error("❌ Error connecting wallet:", error);
-      setStatus("❌ Error connecting wallet.");
+      setContract(deployedContract);
+
+      setStatus(
+        "✅ Wallet connected successfully"
+      );
+    } catch (err: any) {
+      console.error(err);
+
+      setStatus(
+        "❌ Wallet connection failed"
+      );
     }
   }
 
+  // REGISTER IDENTITY
   async function registerIdentity() {
-    if (!identityHash.trim()) return setStatus("❌ Enter an identity hash.");
-    if (!contract) return setStatus("❌ Smart contract not loaded.");
-    if (!account) return setStatus("❌ Connect wallet first.");
-
     try {
-      const signer = await new ethers.BrowserProvider(window.ethereum).getSigner();
-      const contractWithSigner = contract.connect(signer);
-      
-      const identityHashBytes = ethers.keccak256(ethers.toUtf8Bytes(identityHash)); // ✅ Correct hash format
+      if (!contract) {
+        setStatus("❌ Contract not loaded");
+        return;
+      }
 
-      console.log("🔍 Identity Hash:", identityHashBytes);
-      console.log("🔍 Wallet Address:", account);
+      if (!identity.trim()) {
+        setStatus(
+          "❌ Please enter identity"
+        );
+        return;
+      }
 
-      // ✅ Register Identity transaction
-      const tx = await contractWithSigner.registerIdentity(identityHashBytes);
+      // HASH DATA
+      const identityHash =
+        "0x" +
+        CryptoJS.SHA256(identity).toString();
+
+      console.log(
+        "Generated Hash:",
+        identityHash
+      );
+
+      // SEND TRANSACTION
+      const tx =
+        await contract.registerIdentity(
+          identityHash
+        );
+
+      setStatus(
+        "⏳ Waiting for transaction..."
+      );
+
       await tx.wait();
 
-      setStatus("✅ Identity Registered!");
-    } catch (error: any) {
-      console.error("❌ Error Registering Identity:", error);
-      setStatus("❌ Transaction failed.");
+      setStatus(
+        "✅ Identity registered successfully"
+      );
+
+      setIdentity("");
+    } catch (err: any) {
+      console.error(err);
+
+      setStatus(
+        "❌ Transaction failed: " +
+          (err.reason || err.message)
+      );
+    }
+  }
+
+  // FETCH IDENTITY
+  async function fetchIdentity() {
+    try {
+      if (!contract) {
+        setStatus("❌ Contract not loaded");
+        return;
+      }
+
+      if (!searchAddress.trim()) {
+        setStatus(
+          "❌ Please enter wallet address"
+        );
+        return;
+      }
+
+      // VALIDATE ADDRESS
+      if (
+        !ethers.isAddress(searchAddress)
+      ) {
+        setStatus(
+          "❌ Invalid wallet address"
+        );
+        return;
+      }
+
+      // RESET OLD DATA
+      setResultHash("");
+      setResultTimestamp("");
+
+      // GET DATA (Nhận về cả chuỗi Hash và mốc thời gian từ block)
+      const data =
+        await contract.getIdentity(
+          searchAddress
+        );
+
+      console.log("Blockchain Data:", data);
+
+      const hash = data[0];
+      const timestamp = Number(data[1]);
+
+      // NO DATA
+      if (!hash || hash === "" || timestamp === 0) {
+        setStatus(
+          "❌ No identity found"
+        );
+        return;
+      }
+
+      setResultHash(hash);
+
+      // CHUYỂN ĐỔI SANG NGÀY GIỜ THỰC TẾ
+      const date = new Date(
+        timestamp * 1000
+      );
+      setResultTimestamp(
+        date.toLocaleString()
+      );
+
+      setStatus(
+        "✅ Identity fetched successfully"
+      );
+    } catch (err: any) {
+      console.error(err);
+
+      setStatus(
+        "❌ Fetch failed: " +
+          (err.reason || err.message)
+      );
     }
   }
 
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-gray-100 p-4">
-      <h1 className="text-4xl font-bold mb-4">🔒 Blockchain Identity Verification</h1>
-      <p className="text-lg mb-6">Securely register your identity on Ethereum</p>
+    <div className="min-h-screen bg-gray-100 flex flex-col items-center justify-center p-10">
+      <h1 className="text-4xl font-bold mb-2">
+        🔐 Blockchain Identity Verification
+      </h1>
+
+      <p className="mb-6 text-gray-600">
+        Securely register your identity on
+        Ethereum
+      </p>
 
       {!account ? (
         <button
           onClick={connectWallet}
-          className="px-4 py-2 bg-green-500 text-white rounded-lg shadow-md hover:bg-green-700 mb-4"
+          className="bg-blue-500 text-white px-6 py-3 rounded-lg"
         >
           Connect Wallet
         </button>
       ) : (
-        <p className="text-sm text-gray-700 mb-4">Connected: {account}</p>
+        <p className="mb-4 break-all text-center">
+          Connected Wallet:
+          <br />
+          {account}
+        </p>
       )}
 
-      <input
-        type="text"
-        placeholder="Enter your identity hash"
-        className="border p-2 mb-4 w-80"
-        onChange={(e) => setIdentityHash(e.target.value)}
-      />
-      <button
-        onClick={registerIdentity}
-        className="px-4 py-2 bg-blue-500 text-white rounded-lg shadow-md hover:bg-blue-700"
-      >
-        Register Identity
-      </button>
+      <div className="bg-white p-6 rounded-xl shadow-lg w-[400px]">
 
-      <p className="mt-4">{status}</p>
+        {/* REGISTER */}
+        <input
+          type="text"
+          placeholder="Enter your identity"
+          className="border w-full p-3 rounded mb-4"
+          value={identity}
+          onChange={(e) =>
+            setIdentity(e.target.value)
+          }
+        />
+
+        <button
+          onClick={registerIdentity}
+          className="bg-green-500 text-white w-full py-3 rounded-lg mb-6 hover:bg-green-600"
+        >
+          Register Identity
+        </button>
+
+        {/* SEARCH */}
+        <input
+          type="text"
+          placeholder="Enter wallet address"
+          className="border w-full p-3 rounded mb-4"
+          value={searchAddress}
+          onChange={(e) =>
+            setSearchAddress(
+              e.target.value
+            )
+          }
+        />
+
+        <button
+          onClick={fetchIdentity}
+          className="bg-purple-500 text-white w-full py-3 rounded-lg hover:bg-purple-600"
+        >
+          Get Identity
+        </button>
+
+        {/* RESULT */}
+        {resultHash && (
+          <div className="mt-6 border p-4 rounded bg-gray-50">
+            <p className="font-bold mb-2">
+              Identity Hash:
+            </p>
+
+            <p className="break-all text-sm">
+              {resultHash}
+            </p>
+
+            <p className="mt-4 font-bold">
+              Registered At:
+            </p>
+
+            <p>{resultTimestamp}</p>
+          </div>
+        )}
+
+        <p className="mt-4 text-center text-red-500 break-all">
+          {status}
+        </p>
+      </div>
     </div>
   );
 }

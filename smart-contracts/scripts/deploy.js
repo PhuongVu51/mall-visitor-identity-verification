@@ -1,20 +1,18 @@
 const hre = require("hardhat");
 
 async function main() {
-  // Get the contract to deploy
-  const Lock = await hre.ethers.getContractFactory("Lock");
+  // Gọi đúng tên Contract của nhóm Jolista
+  const IdentityRegistry = await hre.ethers.getContractFactory("IdentityRegistry");
 
-  // Get a timestamp 1 day in the future
-  const unlockTime = Math.floor(Date.now() / 1000) + 86400; // 24 hours from now
+  // Triển khai lên mạng (Contract siêu đơn giản nên không cần tham số gì cả)
+  const registry = await IdentityRegistry.deploy();
 
-  // Deploy the contract with a valid unlock time
-  const lock = await Lock.deploy(unlockTime, { value: hre.ethers.parseEther("0.01") });
-
-  await lock.waitForDeployment();
-  console.log(`✅ Contract deployed to: ${await lock.getAddress()}`);
+  await registry.waitForDeployment();
+  
+  console.log(`✅ Contract deployed to: ${await registry.getAddress()}`);
 }
 
-// Handle errors
+// Xử lý lỗi
 main().catch((error) => {
   console.error(error);
   process.exitCode = 1;

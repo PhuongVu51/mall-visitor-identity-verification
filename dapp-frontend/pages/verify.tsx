@@ -3,21 +3,20 @@ import Link from "next/link";
 import { ethers } from "ethers";
 import contractABI from "../constants/contractABI.json";
 
-const contractAddress = "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853";
+const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 export default function VerifyPage() {
   const [inputValue, setInputValue] = useState("");
   const [result, setResult] = useState<"idle" | "verified" | "denied">("idle");
   const [message, setMessage] = useState("Enter visitor DID or wallet address to verify.");
+  const [visitorCid, setVisitorCid] = useState("");
 
-  // --- LOGIC: THỰC SỰ GỌI BLOCKCHAIN ĐỂ XÁC THỰC ---
   async function verifyVisitor() {
     if (!inputValue.trim()) {
       setMessage("Please enter a valid DID or Wallet Address.");
       return;
     }
 
-    // Bóc tách địa chỉ ví (nếu người dùng nhập cả cụm did:lotte:0x...)
     let targetAddress = inputValue.trim().toLowerCase();
     if (targetAddress.startsWith("did:lotte:")) {
       targetAddress = targetAddress.replace("did:lotte:", "");
@@ -26,6 +25,7 @@ export default function VerifyPage() {
     if (!ethers.isAddress(targetAddress)) {
       setResult("denied");
       setMessage("Invalid wallet address format.");
+      setVisitorCid("");
       return;
     }
 
@@ -39,28 +39,33 @@ export default function VerifyPage() {
       const provider = new ethers.BrowserProvider(window.ethereum as any);
       const deployedContract = new ethers.Contract(contractAddress, contractABI.abi, provider);
       
-      // Lấy dữ liệu từ Smart Contract
       const data = await deployedContract.getIdentity(targetAddress);
       const hash = data[0];
-      const isVerified = data[2];
-      const isRevoked = data[3];
+      const cid = data[1];
+      const isVerified = data[3];
+      const isRevoked = data[4];
 
       if (!hash || hash === "") {
         setResult("denied");
+        setVisitorCid("");
         setMessage("Identity not found. The visitor is not registered.");
       } else if (isRevoked) {
         setResult("denied");
+        setVisitorCid(cid);
         setMessage("ACCESS DENIED: This identity has been REVOKED by Admin.");
       } else if (isVerified) {
         setResult("verified");
+        setVisitorCid(cid);
         setMessage("ACCESS GRANTED: The visitor identity is verified and active.");
       } else {
         setResult("denied");
+        setVisitorCid(cid);
         setMessage("ACCESS DENIED: Identity is registered but pending Admin approval.");
       }
     } catch (err) {
       console.error(err);
       setResult("denied");
+      setVisitorCid("");
       setMessage("Error communicating with the blockchain.");
     }
   }
@@ -89,9 +94,9 @@ export default function VerifyPage() {
               </div>
             </Link>
             <div className="flex flex-wrap gap-3">
-              <NavLink href="/">Home</NavLink>
-              <NavLink href="/visitor">Visitor Wallet</NavLink>
-              <NavLink href="/admin">Admin Portal</NavLink>
+              <Link href="/" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]">Home</Link>
+              <Link href="/visitor" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]">Visitor Wallet</Link>
+              <Link href="/admin" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]">Admin Portal</Link>
             </div>
           </nav>
 
@@ -122,7 +127,7 @@ export default function VerifyPage() {
                   value={inputValue}
                   onChange={(event) => setInputValue(event.target.value)}
                   placeholder="did:lotte:0x... or 0x..."
-                  className="mt-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-semibold outline-none transition focus:border-[#E30613] focus:ring-4"
+                  className="mt-2 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 font-semibold outline-none transition focus:border-[#E30613]"
                 />
               </label>
 
@@ -140,6 +145,16 @@ export default function VerifyPage() {
                 <h3 className="mt-3 text-3xl font-black">
                   {result === "verified" ? "Access Granted" : result === "denied" ? "Access Denied" : "Waiting for Check"}
                 </h3>
+                {result !== "idle" && visitorCid && (
+                  <div className="mt-4">
+                    <p className="text-xs font-black uppercase tracking-[0.2em] mb-2 text-neutral-400">Visitor Photo Verification:</p>
+                    <img 
+                      src={`https://ipfs.io/ipfs/${visitorCid}`} 
+                      alt="Verified Profile" 
+                      className="w-full h-48 object-cover rounded-xl border border-neutral-200 shadow-sm"
+                    />
+                  </div>
+                )}
               </div>
             </div>
           </div>

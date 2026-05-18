@@ -29,7 +29,7 @@ export default function AdminPortal() {
   const [revokeReason, setRevokeReason] = useState("");
 
   // BẮT BUỘC: Đổi địa chỉ này thành địa chỉ Contract MỚI NHẤT của bạn sau khi deploy
-  const contractAddress = "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853";
+  const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
   // --- LOGIC: CONNECT WALLET ---
   async function connectWallet() {

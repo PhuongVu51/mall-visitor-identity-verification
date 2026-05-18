@@ -5,7 +5,8 @@ contract IdentityRegistry {
     address public admin;
 
     struct Identity {
-        string identityHash;
+        string identityHash; // Hash của tên + SĐT
+        string ipfsCID;      // MỚI: Mã băm của hình ảnh CCCD/Avatar trên IPFS
         uint256 timestamp;
         bool isVerified;
         bool isRevoked; 
@@ -22,9 +23,11 @@ contract IdentityRegistry {
         admin = msg.sender;
     }
 
-    function registerIdentity(string memory _hash) public {
+    // MỚI: Hàm đăng ký giờ nhận thêm tham số _ipfsCID
+    function registerIdentity(string memory _hash, string memory _ipfsCID) public {
         identities[msg.sender] = Identity({
             identityHash: _hash,
+            ipfsCID: _ipfsCID,
             timestamp: block.timestamp,
             isVerified: false,
             isRevoked: false
@@ -43,8 +46,9 @@ contract IdentityRegistry {
         identities[user].isRevoked = true;
     }
 
-    function getIdentity(address user) public view returns (string memory, uint256, bool, bool) {
+    // MỚI: Hàm getIdentity giờ trả về 5 tham số (thêm ipfsCID ở vị trí số 2)
+    function getIdentity(address user) public view returns (string memory, string memory, uint256, bool, bool) {
         Identity memory id = identities[user];
-        return (id.identityHash, id.timestamp, id.isVerified, id.isRevoked);
+        return (id.identityHash, id.ipfsCID, id.timestamp, id.isVerified, id.isRevoked);
     }
 }

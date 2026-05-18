@@ -20,7 +20,7 @@ declare global {
 
 type IdentityStatus = "Not Registered" | "Pending" | "Verified" | "Revoked";
 
-const contractAddress = "0xa513E6E4b8f2a923D98304ec87F64353C4D5C853";
+const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 function shortenAddress(address: string) {
   if (!address) return "Not connected";
@@ -46,9 +46,9 @@ export default function VisitorWalletPage() {
     "Connect MetaMask to view your visitor digital identity."
   );
 
-  // --- WEB3 STATES ---
   const [onChainStatus, setOnChainStatus] = useState<IdentityStatus>("Not Registered");
   const [onChainHash, setOnChainHash] = useState("");
+  const [onChainCid, setOnChainCid] = useState("");
   const [onChainDate, setOnChainDate] = useState("");
 
   const did = useMemo(() => makeDid(walletAddress), [walletAddress]);
@@ -61,13 +61,12 @@ export default function VisitorWalletPage() {
     if (savedWallet) {
       setWalletAddress(savedWallet);
       setStatusMessage(`Wallet loaded from storage. Reconnect to sync Blockchain.`);
-      fetchOnChainIdentity(savedWallet); // Lấy dữ liệu ngay khi load trang
+      fetchOnChainIdentity(savedWallet);
     }
 
     if (savedNetwork) setNetworkLabel(savedNetwork);
   }, []);
 
-  // --- LOGIC: FETCH BLOCKCHAIN DATA ---
   async function fetchOnChainIdentity(address: string) {
     try {
       if (!window.ethereum) return;
@@ -76,16 +75,19 @@ export default function VisitorWalletPage() {
       
       const data = await deployedContract.getIdentity(address);
       const hash = data[0];
-      const timestamp = Number(data[1]);
-      const verified = data[2];
-      const revoked = data[3];
+      const cid = data[1];
+      const timestamp = Number(data[2]);
+      const verified = data[3];
+      const revoked = data[4];
 
       if (!hash || hash === "") {
         setOnChainStatus("Not Registered");
         setOnChainHash("");
+        setOnChainCid("");
         setOnChainDate("");
       } else {
         setOnChainHash(hash);
+        setOnChainCid(cid);
         setOnChainDate(new Date(timestamp * 1000).toLocaleString());
         
         if (revoked) setOnChainStatus("Revoked");
@@ -97,7 +99,6 @@ export default function VisitorWalletPage() {
     }
   }
 
-  // --- LOGIC: CONNECT WALLET ---
   async function connectWallet() {
     try {
       if (!window.ethereum) {
@@ -127,9 +128,7 @@ export default function VisitorWalletPage() {
       }
 
       setStatusMessage(`Wallet connected: ${selectedAccount}`);
-      // Lấy dữ liệu blockchain ngay sau khi kết nối
       await fetchOnChainIdentity(selectedAccount);
-
     } catch {
       setStatusMessage("Wallet connection was rejected or failed.");
     }
@@ -144,7 +143,7 @@ export default function VisitorWalletPage() {
         <div className="relative mx-auto max-w-7xl px-6 py-7">
           <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
             <Link href="/" className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200">L</div>
+              <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl">L</div>
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">Lotte Mall West Lake</p>
                 <h1 className="text-xl font-black tracking-tight md:text-2xl">Visitor DID Wallet</h1>
@@ -154,7 +153,8 @@ export default function VisitorWalletPage() {
             <div className="flex flex-wrap items-center gap-3">
               <Link href="/" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Home</Link>
               <Link href="/admin" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Admin Portal</Link>
-              <button onClick={connectWallet} className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a]">
+              <Link href="/verify" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Verify</Link>
+              <button onClick={connectWallet} className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#bd000a]">
                 Connect Wallet
               </button>
             </div>
@@ -169,7 +169,7 @@ export default function VisitorWalletPage() {
                 Your mall identity, <span className="text-[#E30613]">without exposing private data.</span>
               </h2>
               <p className="mt-7 max-w-2xl text-lg leading-8 text-neutral-700 md:text-xl md:leading-9">
-                This page pulls real data from the Blockchain. Name and phone number are hidden to protect privacy.
+                This page pulls real data from the Blockchain. Private details remain completely protected off-chain.
               </p>
 
               <div className="mt-9 flex flex-wrap gap-4">
@@ -215,11 +215,21 @@ export default function VisitorWalletPage() {
           <h2 className="mt-2 text-4xl font-black tracking-tight">Identity overview</h2>
 
           <div className="mt-6 space-y-4">
-            {/* 💡 ĐIỂM ĂN TIỀN ĐỒ ÁN: Tên được ẩn đi để chứng minh tính bảo mật */}
             <ProfileItem label="Visitor Name" value="*** Protected (Off-chain) ***" />
             <ProfileItem label="Visitor Type" value="Lotte Mall Visitor" />
             <ProfileItem label="Issued At (Blockchain)" value={onChainDate || "Waiting for registration"} />
             <ProfileItem label="DID Format" value={`did:lotte:${walletAddress ? shortenAddress(walletAddress) : "..."}`} />
+            
+            {onChainCid && (
+              <div className="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400 mb-2">Decentralized Portrait</p>
+                <img 
+                  src={`https://ipfs.io/ipfs/${onChainCid}`} 
+                  alt="Visitor Avatar" 
+                  className="w-full h-48 object-cover rounded-xl border border-red-200 shadow-sm"
+                />
+              </div>
+            )}
           </div>
 
           <div className={`mt-6 rounded-3xl border p-5 ${getStatusStyle(onChainStatus)}`}>
@@ -250,7 +260,7 @@ export default function VisitorWalletPage() {
             <p className="text-sm font-black uppercase tracking-[0.28em] text-white/45">Privacy note</p>
             <h3 className="mt-3 text-2xl font-black">Personal information is hidden.</h3>
             <p className="mt-4 leading-7 text-white/70">
-              As you can see, no raw data (Name, Phone) is pulled from the blockchain. Merchants only verify the Hash and your Verification Status.
+              As you can see, no raw data is pulled from the blockchain. Merchants only verify the Hash, IPFS photo, and your Verification Status.
             </p>
           </div>
         </div>

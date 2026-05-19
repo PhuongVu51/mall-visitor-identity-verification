@@ -1,320 +1,926 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ethers } from "ethers";
-import CryptoJS from "crypto-js";
 import contractABI from "../constants/contractABI.json";
 
 type IdentityStatus = "None" | "Pending" | "Verified" | "Revoked";
+
+type EthereumRequestArgs = {
+  method: string;
+  params?: unknown[];
+};
+
+type EthereumProvider = {
+  request: <T = unknown>(args: EthereumRequestArgs) => Promise<T>;
+};
+
+type UserSession = {
+  role?: "visitor" | "admin" | "merchant";
+  name?: string;
+  email?: string;
+};
+
+type IdentityContract = {
+  getIdentity: (walletAddress: string) => Promise<unknown>;
+  registerIdentity?: (walletAddress: string, identityHash: string) => Promise<ContractTransaction>;
+  verifyIdentity?: (walletAddress: string) => Promise<ContractTransaction>;
+  revokeIdentity?: (walletAddress: string) => Promise<ContractTransaction>;
+};
+
+type ContractTransaction = {
+  hash: string;
+  wait: () => Promise<unknown>;
+};
+
+type IdentityLookupResult = {
+  hash: string;
+  status: IdentityStatus;
+  verified: boolean;
+  revoked: boolean;
+};
+
+type TransactionLog = {
+  id: string;
+  action: string;
+  wallet: string;
+  status: string;
+  txHash: string;
+  time: string;
+};
+
+declare global {
+  interface Window {
+    ethereum?: EthereumProvider;
+  }
+}
+
+const CONTRACT_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 function shortenAddress(address: string) {
   if (!address) return "Not connected";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
 }
 
+function makeDid(address: string) {
+  if (!address) return "did:lotte:not-connected";
+  return `did:lotte:${address}`;
+}
+
+function getErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+
+  if (typeof error === "object" && error !== null) {
+    const maybeReason = (error as { reason?: unknown }).reason;
+    const maybeMessage = (error as { message?: unknown }).message;
+
+    if (typeof maybeReason === "string") return maybeReason;
+    if (typeof maybeMessage === "string") return maybeMessage;
+  }
+
+  return "Unknown error.";
+}
+
+function isValidSession(value: string | null) {
+  if (!value) return false;
+
+  try {
+    const parsed = JSON.parse(value) as UserSession;
+    return parsed.role === "admin";
+  } catch {
+    return false;
+  }
+}
+
+function parseIdentityResult(data: unknown): IdentityLookupResult {
+  if (!Array.isArray(data)) {
+    return {
+      hash: "",
+      verified: false,
+      revoked: false,
+      status: "None",
+    };
+  }
+
+  const hashValue = data[0];
+  const verifiedValue = data[3];
+  const revokedValue = data[4];
+
+  const hash = typeof hashValue === "string" ? hashValue : "";
+  const verified = Boolean(verifiedValue);
+  const revoked = Boolean(revokedValue);
+
+  let status: IdentityStatus = "None";
+
+  if (hash && revoked) {
+    status = "Revoked";
+  } else if (hash && verified) {
+    status = "Verified";
+  } else if (hash) {
+    status = "Pending";
+  }
+
+  return {
+    hash,
+    verified,
+    revoked,
+    status,
+  };
+}
+
+function readLogs(): TransactionLog[] {
+  try {
+    const raw = window.localStorage.getItem("lotte_transaction_logs");
+    if (!raw) return [];
+
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed.filter((item): item is TransactionLog => {
+      if (typeof item !== "object" || item === null) return false;
+
+      const log = item as Partial<TransactionLog>;
+
+      return (
+        typeof log.id === "string" &&
+        typeof log.action === "string" &&
+        typeof log.wallet === "string" &&
+        typeof log.status === "string" &&
+        typeof log.txHash === "string" &&
+        typeof log.time === "string"
+      );
+    });
+  } catch {
+    return [];
+  }
+}
+
+function saveLog(log: Omit<TransactionLog, "id" | "time">) {
+  const nextLog: TransactionLog = {
+    ...log,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    time: new Date().toLocaleString(),
+  };
+
+  const currentLogs = readLogs();
+  window.localStorage.setItem(
+    "lotte_transaction_logs",
+    JSON.stringify([nextLog, ...currentLogs].slice(0, 20)),
+  );
+}
+
 export default function AdminPortal() {
-  // ⚠️ PASTE YOUR PINATA JWT MASTER KEY HERE:
-  const PINATA_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI2Nzg3ZTE2MC0yZDExLTQ3MWQtYjU1ZS02OTJiMDc2ZGY2ZDEiLCJlbWFpbCI6InZ1cGh1b25nMDUwMTIwMDVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImY1MjBlYTZkMjk1YjhkOGIzMjM0Iiwic2NvcGVkS2V5U2VjcmV0IjoiNjM3MTJiMzY4NTI0ZWU5OTI3NDFmODYwMjBlNGIwMmIxMzA3OWI1Y2RmOTM5Y2FlZTlhMDgzMjcyMzM2MTI4OSIsImV4cCI6MTgxMDY1Mzk3OX0.Qho2Ux0HFO6OWtRqua2Zoce6xAZC_5y6LMrCkwckv98"; 
+  const [isCheckingRole, setIsCheckingRole] = useState(true);
 
-  // --- STATES ---
   const [walletAddress, setWalletAddress] = useState("");
-  const [statusMessage, setStatusMessage] = useState("Connect MetaMask with Admin Account.");
-  const [contract, setContract] = useState<any>(null);
+  const [statusMessage, setStatusMessage] = useState(
+    "Sign in as Lotte Mall Admin and connect MetaMask.",
+  );
+  const [contract, setContract] = useState<IdentityContract | null>(null);
 
-  // States for REGISTER simulation column
   const [visitorName, setVisitorName] = useState("");
   const [phone, setPhone] = useState("");
   const [email, setEmail] = useState("");
   const [visitorWallet, setVisitorWallet] = useState("");
   const [generatedHash, setGeneratedHash] = useState("");
 
-  // States for IDENTITY CONTROL column
   const [targetWallet, setTargetWallet] = useState("");
-  const [currentOnChainStatus, setCurrentOnChainStatus] = useState<IdentityStatus>("None");
+  const [lookupHash, setLookupHash] = useState("");
+  const [currentOnChainStatus, setCurrentOnChainStatus] =
+    useState<IdentityStatus>("None");
+
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [isRegistering, setIsRegistering] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
+  const [isApproving, setIsApproving] = useState(false);
+  const [isRevoking, setIsRevoking] = useState(false);
 
-  // Contract Address của nhóm Jolista
-  const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
+  const didPreview = useMemo(() => makeDid(visitorWallet), [visitorWallet]);
 
-  // --- LOGIC: CONNECT WALLET ---
+  const canRegister =
+    Boolean(contract) &&
+    ethers.isAddress(visitorWallet.trim()) &&
+    Boolean(generatedHash);
+
+  useEffect(() => {
+    const isAdmin = isValidSession(window.localStorage.getItem("lotte_web2_user"));
+
+    if (!isAdmin) {
+      window.location.href = "/";
+      return;
+    }
+
+    setIsCheckingRole(false);
+  }, []);
+
+  useEffect(() => {
+    const savedWallet = window.localStorage.getItem("lotte_wallet_address");
+
+    if (savedWallet) {
+      setWalletAddress(savedWallet);
+    }
+  }, []);
+
   async function connectWallet() {
     try {
+      setIsConnecting(true);
+
       if (!window.ethereum) {
-        setStatusMessage("❌ MetaMask is not installed.");
+        setStatusMessage("MetaMask is not installed.");
         return;
       }
-      const provider = new ethers.BrowserProvider(window.ethereum as any);
+
+      const provider = new ethers.BrowserProvider(window.ethereum);
       const accounts = await provider.send("eth_requestAccounts", []);
       const signer = await provider.getSigner();
-      const deployedContract = new ethers.Contract(contractAddress, contractABI.abi, signer);
 
-      setWalletAddress(accounts[0]);
+      const selectedAccount =
+        Array.isArray(accounts) && typeof accounts[0] === "string"
+          ? accounts[0]
+          : await signer.getAddress();
+
+      const deployedContract = new ethers.Contract(
+        CONTRACT_ADDRESS,
+        contractABI.abi,
+        signer,
+      ) as unknown as IdentityContract;
+
+      setWalletAddress(selectedAccount);
       setContract(deployedContract);
-      setStatusMessage(`✅ Admin Wallet connected successfully`);
-    } catch (err: any) {
-      console.error(err);
-      setStatusMessage("❌ Wallet connection failed.");
+
+      window.localStorage.setItem("lotte_wallet_address", selectedAccount);
+
+      setStatusMessage("Admin wallet connected successfully.");
+    } catch (error) {
+      setStatusMessage(`Wallet connection failed: ${getErrorMessage(error)}`);
+    } finally {
+      setIsConnecting(false);
     }
   }
 
-  // --- LOGIC: GENERATE HASH ---
   function handleGenerateHash() {
-    if (!visitorName || !phone || !email) {
-      setStatusMessage("❌ Please fill in Name, Phone, and Email to generate Hash.");
+    if (!visitorName.trim() || !phone.trim() || !email.trim()) {
+      setStatusMessage("Please fill in visitor name, phone, and email.");
       return;
     }
-    const rawData = visitorName + phone + email;
-    const hash = "0x" + CryptoJS.SHA256(rawData).toString();
+
+    if (!visitorWallet.trim() || !ethers.isAddress(visitorWallet.trim())) {
+      setStatusMessage("Please enter a valid visitor wallet address.");
+      return;
+    }
+
+    setIsGenerating(true);
+
+    const rawData = JSON.stringify({
+      name: visitorName.trim(),
+      phone: phone.trim(),
+      email: email.trim().toLowerCase(),
+      wallet: visitorWallet.trim().toLowerCase(),
+    });
+
+    const hash = ethers.keccak256(ethers.toUtf8Bytes(rawData));
+
     setGeneratedHash(hash);
-    setStatusMessage("✅ Hash generated successfully! Now you can register.");
+    setTargetWallet(visitorWallet.trim());
+    setCurrentOnChainStatus("None");
+    setLookupHash("");
+
+    setStatusMessage("Identity hash generated. Ready to register on blockchain.");
+    setIsGenerating(false);
   }
 
-  // --- LOGIC: LOOK UP STATUS (KIỂM TRA TRẠNG THÁI) ---
-  async function checkVisitorStatus() {
+  async function handleRegisterIdentity() {
     if (!contract) {
-      setStatusMessage("❌ Please connect Admin wallet first.");
-      return;
-    }
-    if (!targetWallet.trim() || !ethers.isAddress(targetWallet.trim())) {
-      setStatusMessage("❌ Please enter a valid Wallet Address to look up.");
+      setStatusMessage("Please connect Admin wallet first.");
       return;
     }
 
-    setIsSearching(true);
-    setStatusMessage("⏳ Fetching live account status from Blockchain...");
-    
+    if (!contract.registerIdentity) {
+      setStatusMessage(
+        "Smart contract ABI does not expose registerIdentity(wallet, hash). Please check your contract function name.",
+      );
+      return;
+    }
+
+    if (!canRegister) {
+      setStatusMessage("Generate a valid identity hash before registering.");
+      return;
+    }
+
     try {
-      const data = await contract.getIdentity(targetWallet.trim());
-      const hash = data[0];
-      const verified = data[3];
-      const revoked = data[4];
+      setIsRegistering(true);
+      setStatusMessage("Sending Register Identity transaction to blockchain...");
 
-      if (!hash || hash === "") {
-        setCurrentOnChainStatus("None");
-        setStatusMessage("❌ This wallet address has not initiated any DID registration requests.");
-      } else if (revoked) {
-        setCurrentOnChainStatus("Revoked");
-        setStatusMessage("⚠️ Identity found: Status is currently REVOKED.");
-      } else if (verified) {
-        setCurrentOnChainStatus("Verified");
-        setStatusMessage("✅ Identity found: Status is currently VERIFIED and Active.");
-      } else {
-        setCurrentOnChainStatus("Pending");
-        setStatusMessage("🔔 Identity found: Status is PENDING approval.");
+      const tx = await contract.registerIdentity(
+        visitorWallet.trim(),
+        generatedHash,
+      );
+
+      await tx.wait();
+
+      saveLog({
+        action: "Register Identity",
+        wallet: visitorWallet.trim(),
+        status: "Success",
+        txHash: tx.hash,
+      });
+
+      setStatusMessage("Identity registered on blockchain successfully.");
+      setTargetWallet(visitorWallet.trim());
+      await checkVisitorStatus(visitorWallet.trim());
+    } catch (error) {
+      setStatusMessage(`Register failed: ${getErrorMessage(error)}`);
+    } finally {
+      setIsRegistering(false);
+    }
+  }
+
+  async function checkVisitorStatus(walletFromAction?: string) {
+    const walletToCheck = walletFromAction ?? targetWallet.trim();
+
+    if (!contract) {
+      setStatusMessage("Please connect Admin wallet first.");
+      return;
+    }
+
+    if (!walletToCheck || !ethers.isAddress(walletToCheck)) {
+      setStatusMessage("Please enter a valid visitor wallet address.");
+      return;
+    }
+
+    try {
+      setIsSearching(true);
+      setStatusMessage("Fetching visitor status from smart contract...");
+
+      const data = await contract.getIdentity(walletToCheck);
+      const parsed = parseIdentityResult(data);
+
+      setTargetWallet(walletToCheck);
+      setLookupHash(parsed.hash);
+      setCurrentOnChainStatus(parsed.status);
+
+      if (parsed.status === "None") {
+        setStatusMessage("No registered identity found for this wallet.");
       }
-    } catch (err) {
-      console.error(err);
-      setStatusMessage("❌ Error fetching status from Smart Contract.");
+
+      if (parsed.status === "Pending") {
+        setStatusMessage("Identity found. Current status: Pending approval.");
+      }
+
+      if (parsed.status === "Verified") {
+        setStatusMessage("Identity found. Current status: Verified.");
+      }
+
+      if (parsed.status === "Revoked") {
+        setStatusMessage("Identity found. Current status: Revoked.");
+      }
+
+      saveLog({
+        action: "Look up Visitor",
+        wallet: walletToCheck,
+        status: parsed.status,
+        txHash: "read-only",
+      });
+    } catch (error) {
+      setStatusMessage(`Lookup failed: ${getErrorMessage(error)}`);
     } finally {
       setIsSearching(false);
     }
   }
 
-  // --- LOGIC: APPROVE IDENTITY (HÀM ĐÃ ĐƯỢC SỬA CHUẨN ABI) ---
   async function handleApproveIdentity() {
+    if (!contract) {
+      setStatusMessage("Please connect Admin wallet first.");
+      return;
+    }
+
+    if (!contract.verifyIdentity) {
+      setStatusMessage(
+        "Smart contract ABI does not expose verifyIdentity(wallet). Please check your contract function name.",
+      );
+      return;
+    }
+
+    if (!targetWallet.trim() || !ethers.isAddress(targetWallet.trim())) {
+      setStatusMessage("Please enter a valid visitor wallet address.");
+      return;
+    }
+
     try {
-      if (!contract || !targetWallet.trim()) return;
-      setStatusMessage("⏳ Broadcasting Approve transaction to Blockchain...");
-      
+      setIsApproving(true);
+      setStatusMessage("Sending Approve Identity transaction to blockchain...");
+
       const tx = await contract.verifyIdentity(targetWallet.trim());
       await tx.wait();
 
-      setStatusMessage("✅ Success! Identity has been approved and activated.");
-      await checkVisitorStatus();
-    } catch (err: any) {
-      console.error(err);
-      setStatusMessage("❌ Approve failed: " + (err.reason || err.message));
+      saveLog({
+        action: "Approve Identity",
+        wallet: targetWallet.trim(),
+        status: "Success",
+        txHash: tx.hash,
+      });
+
+      setStatusMessage("Identity approved successfully.");
+      await checkVisitorStatus(targetWallet.trim());
+    } catch (error) {
+      setStatusMessage(`Approve failed: ${getErrorMessage(error)}`);
+    } finally {
+      setIsApproving(false);
     }
   }
 
-  // --- LOGIC: REVOKE IDENTITY ---
   async function handleRevokeIdentity() {
+    if (!contract) {
+      setStatusMessage("Please connect Admin wallet first.");
+      return;
+    }
+
+    if (!contract.revokeIdentity) {
+      setStatusMessage(
+        "Smart contract ABI does not expose revokeIdentity(wallet). Please check your contract function name.",
+      );
+      return;
+    }
+
+    if (!targetWallet.trim() || !ethers.isAddress(targetWallet.trim())) {
+      setStatusMessage("Please enter a valid visitor wallet address.");
+      return;
+    }
+
     try {
-      if (!contract || !targetWallet.trim()) return;
-      setStatusMessage("⏳ Broadcasting Revoke transaction to Blockchain...");
-      
+      setIsRevoking(true);
+      setStatusMessage("Sending Revoke Identity transaction to blockchain...");
+
       const tx = await contract.revokeIdentity(targetWallet.trim());
       await tx.wait();
 
-      setStatusMessage("✅ Success! Identity has been revoked and blacklisted.");
-      await checkVisitorStatus();
-    } catch (err: any) {
-      console.error(err);
-      setStatusMessage("❌ Revoke failed: " + (err.reason || err.message));
+      saveLog({
+        action: "Revoke Identity",
+        wallet: targetWallet.trim(),
+        status: "Success",
+        txHash: tx.hash,
+      });
+
+      setStatusMessage("Identity revoked successfully.");
+      await checkVisitorStatus(targetWallet.trim());
+    } catch (error) {
+      setStatusMessage(`Revoke failed: ${getErrorMessage(error)}`);
+    } finally {
+      setIsRevoking(false);
     }
   }
 
-  const handleLogout = () => {
+  function handleUseVisitorWallet() {
+    if (!visitorWallet.trim()) {
+      setStatusMessage("Enter visitor wallet first.");
+      return;
+    }
+
+    setTargetWallet(visitorWallet.trim());
+    setCurrentOnChainStatus("None");
+    setLookupHash("");
+    setStatusMessage("Visitor wallet copied to lookup desk.");
+  }
+
+  function handleClearForm() {
+    setVisitorName("");
+    setPhone("");
+    setEmail("");
+    setVisitorWallet("");
+    setGeneratedHash("");
+    setStatusMessage("Register form cleared.");
+  }
+
+  function handleLogout() {
     window.localStorage.removeItem("lotte_web2_user");
     window.location.href = "/";
-  };
+  }
+
+  if (isCheckingRole) {
+    return (
+      <main className="flex min-h-screen items-center justify-center bg-[#fff8f6] text-[#151515]">
+        <div className="rounded-[2rem] border border-red-100 bg-white p-8 text-center shadow-xl shadow-red-50">
+          <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
+            Checking session
+          </p>
+          <h1 className="mt-3 text-3xl font-black">Loading Admin Portal...</h1>
+        </div>
+      </main>
+    );
+  }
 
   return (
     <main className="min-h-screen bg-[#fff8f6] text-[#151515]">
-      <section className="relative overflow-hidden bg-gradient-to-br from-white via-[#fff4f1] to-[#ffe1dc] pb-10">
+      <section className="relative overflow-hidden bg-gradient-to-br from-white via-[#fff4f1] to-[#ffe1dc] pb-12">
+        <div className="pointer-events-none absolute left-[-180px] top-[-180px] h-[460px] w-[460px] rounded-full bg-[#E30613]/15 blur-3xl" />
+        <div className="pointer-events-none absolute bottom-[-240px] right-[-120px] h-[520px] w-[520px] rounded-full bg-[#E30613]/20 blur-3xl" />
+        <div className="pointer-events-none absolute right-[12%] top-24 hidden h-40 w-40 rotate-12 rounded-[3rem] bg-[#E30613]/10 lg:block" />
+
         <div className="relative mx-auto max-w-7xl px-6 py-7">
           <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <div className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200">L</div>
-              <div>
-                <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">Lotte Mall West Lake</p>
-                <h1 className="text-xl font-black tracking-tight md:text-2xl">Admin Portal</h1>
+            <Link href="/" className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200">
+                L
               </div>
-            </div>
-            
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">
+                  Lotte Mall West Lake
+                </p>
+                <h1 className="text-xl font-black tracking-tight md:text-2xl">
+                  Lotte Mall Admin Portal
+                </h1>
+              </div>
+            </Link>
+
             <div className="flex flex-wrap items-center gap-3">
-              <Link href="/verify" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">
-                Verify Desk
+              <Link
+                href="/verify"
+                className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-[#E30613] hover:text-[#E30613]"
+              >
+                Merchant Verify Page
               </Link>
+
+              <Link
+                href="/transactions"
+                className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-[#E30613] hover:text-[#E30613]"
+              >
+                Audit Log
+              </Link>
+
               <button
                 onClick={connectWallet}
-                className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a]"
+                disabled={isConnecting}
+                className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:cursor-not-allowed disabled:opacity-70"
               >
-                {walletAddress ? shortenAddress(walletAddress) : "Connect Admin Wallet"}
+                {isConnecting
+                  ? "Connecting..."
+                  : walletAddress
+                    ? shortenAddress(walletAddress)
+                    : "Connect Admin Wallet"}
               </button>
+
               <button
                 onClick={handleLogout}
-                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm backdrop-blur transition hover:bg-neutral-200 hover:text-neutral-800"
+                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm transition hover:bg-neutral-200 hover:text-neutral-800"
               >
                 Logout
               </button>
             </div>
           </nav>
 
-          <div className="mt-12">
-            <div className="inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm backdrop-blur">
-              <span className="flex h-3 w-3 rounded-full bg-[#E30613]" /> Lotte Mall Admin
+          <div className="mt-14 grid gap-8 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
+            <div>
+              <div className="inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm backdrop-blur">
+                <span className="h-3 w-3 rounded-full bg-[#E30613]" />
+                Lotte Mall Admin
+              </div>
+
+              <h2 className="mt-6 max-w-5xl text-5xl font-black leading-[0.98] tracking-[-0.055em] text-[#111] md:text-7xl">
+                Register and manage{" "}
+                <span className="text-[#E30613]">visitor identity.</span>
+              </h2>
+
+              <p className="mt-6 max-w-2xl text-lg leading-8 text-neutral-700">
+                This portal is used by Lotte Mall Admin to register visitor identity,
+                approve verification status, look up records, and revoke access when needed.
+              </p>
             </div>
-            <h2 className="mt-6 max-w-4xl text-5xl font-black leading-[0.98] tracking-[-0.055em] text-[#111] md:text-7xl">
-              Decentralized identity <span className="text-[#E30613]">management.</span>
-            </h2>
-            
-            <div className="mt-6 max-w-2xl rounded-[1.75rem] border border-red-100 bg-white p-5 shadow-sm">
-               <p className="text-xs font-black uppercase tracking-[0.2em] text-neutral-400">Admin System Messages</p>
-               <p className={`mt-2 font-bold ${statusMessage.includes("❌") || statusMessage.includes("⚠️") ? "text-red-500" : "text-green-600"}`}>
-                 {statusMessage}
-               </p>
+
+            <div className="rounded-[2rem] border border-red-100 bg-white/85 p-5 shadow-xl shadow-red-50 backdrop-blur">
+              <p className="text-xs font-black uppercase tracking-[0.25em] text-neutral-400">
+                Admin System Message
+              </p>
+              <p
+                className={`mt-3 break-words text-base font-black leading-7 ${
+                  statusMessage.toLowerCase().includes("failed") ||
+                  statusMessage.toLowerCase().includes("invalid") ||
+                  statusMessage.toLowerCase().includes("not installed") ||
+                  statusMessage.toLowerCase().includes("does not expose")
+                    ? "text-red-600"
+                    : "text-green-700"
+                }`}
+              >
+                {statusMessage}
+              </p>
+
+              <div className="mt-4 rounded-2xl bg-[#fff4f1] p-4">
+                <p className="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+                  Connected Wallet
+                </p>
+                <p className="mt-2 break-all text-sm font-black text-neutral-900">
+                  {walletAddress || "Not connected"}
+                </p>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
       <section className="mx-auto max-w-7xl px-6 py-10">
-        <div className="grid gap-8 lg:grid-cols-2">
-          
-          {/* LEFT COLUMN: SIMULATION TOOL */}
-          <div className="rounded-[2.5rem] border border-red-100 bg-white p-8 shadow-xl shadow-red-50">
-            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Simulation Tool</p>
-            <h3 className="mt-2 text-4xl font-black tracking-tight">Visitor information</h3>
-            
+        <div className="grid gap-8 lg:grid-cols-[1.05fr_0.95fr]">
+          <div className="rounded-[2.5rem] border border-red-100 bg-white p-7 shadow-xl shadow-red-50 md:p-8">
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
+              Register Identity
+            </p>
+            <h3 className="mt-2 text-4xl font-black tracking-tight">
+              Visitor Information
+            </h3>
+
+            <p className="mt-4 max-w-2xl leading-7 text-neutral-600">
+              Raw visitor details are used only to generate an identity hash.
+              The blockchain stores the hash and status, not private data.
+            </p>
+
             <div className="mt-8 grid gap-4 md:grid-cols-2">
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Visitor Name</label>
-                <input type="text" value={visitorName} onChange={(e)=>setVisitorName(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-200 bg-[#fffaf8] p-3 outline-none focus:border-[#E30613]" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Phone Number</label>
-                <input type="text" value={phone} onChange={(e)=>setPhone(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-200 bg-[#fffaf8] p-3 outline-none focus:border-[#E30613]" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Email</label>
-                <input type="text" value={email} onChange={(e)=>setEmail(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-200 bg-[#fffaf8] p-3 outline-none focus:border-[#E30613]" />
-              </div>
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Wallet Address</label>
-                <input type="text" value={visitorWallet} onChange={(e)=>setVisitorWallet(e.target.value)} className="mt-1 w-full rounded-xl border border-neutral-200 bg-[#fffaf8] p-3 outline-none focus:border-[#E30613]" />
-              </div>
+              <Field
+                label="Visitor Name"
+                value={visitorName}
+                onChange={setVisitorName}
+                placeholder="Nguyen Tung Lam"
+              />
+
+              <Field
+                label="Phone Number"
+                value={phone}
+                onChange={setPhone}
+                placeholder="0912345678"
+              />
+
+              <Field
+                label="Email"
+                value={email}
+                onChange={setEmail}
+                placeholder="visitor@example.com"
+              />
+
+              <Field
+                label="Visitor Wallet Address (DID Owner)"
+                value={visitorWallet}
+                onChange={(value) => {
+                  setVisitorWallet(value);
+                  setGeneratedHash("");
+                }}
+                placeholder="0x..."
+                mono
+              />
+            </div>
+
+            <div className="mt-6 rounded-[1.5rem] border border-red-100 bg-[#fffaf8] p-5">
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-neutral-400">
+                DID Preview
+              </p>
+              <p className="mt-2 break-all text-sm font-black text-neutral-900">
+                {didPreview}
+              </p>
             </div>
 
             <div className="mt-6 flex flex-wrap gap-4">
-              <button onClick={handleGenerateHash} className="rounded-xl border border-red-200 bg-white px-6 py-3 font-black text-[#E30613] hover:bg-red-50">
-                Generate Identity Hash
+              <button
+                onClick={handleGenerateHash}
+                disabled={isGenerating}
+                className="rounded-2xl border border-red-200 bg-white px-6 py-4 font-black text-[#E30613] transition hover:-translate-y-0.5 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-70"
+              >
+                {isGenerating ? "Generating..." : "Generate Identity Hash"}
+              </button>
+
+              <button
+                onClick={handleRegisterIdentity}
+                disabled={!canRegister || isRegistering}
+                className="rounded-2xl bg-[#E30613] px-6 py-4 font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {isRegistering ? "Registering..." : "Register Identity On-chain"}
+              </button>
+
+              <button
+                onClick={handleUseVisitorWallet}
+                className="rounded-2xl border border-neutral-200 bg-neutral-50 px-6 py-4 font-black text-neutral-700 transition hover:-translate-y-0.5 hover:bg-neutral-100"
+              >
+                Use in Lookup
+              </button>
+
+              <button
+                onClick={handleClearForm}
+                className="rounded-2xl border border-neutral-200 bg-white px-6 py-4 font-black text-neutral-500 transition hover:-translate-y-0.5 hover:bg-neutral-50"
+              >
+                Clear
               </button>
             </div>
 
-            {generatedHash && (
-              <div className="mt-6 rounded-2xl bg-neutral-900 p-5 text-white">
-                <p className="text-xs font-black uppercase text-white/50">Generated Hash (Off-chain)</p>
-                <p className="mt-2 break-all font-mono text-sm">{generatedHash}</p>
+            {generatedHash ? (
+              <div className="mt-6 rounded-[1.7rem] bg-neutral-950 p-5 text-white shadow-xl shadow-neutral-200">
+                <p className="text-xs font-black uppercase tracking-[0.24em] text-white/45">
+                  Generated Identity Hash
+                </p>
+                <p className="mt-3 break-all font-mono text-sm font-bold text-white">
+                  {generatedHash}
+                </p>
               </div>
-            )}
+            ) : null}
           </div>
 
-          {/* RIGHT COLUMN: ACCESS CONTROL DESK */}
-          <div className="rounded-[2.5rem] border border-red-100 bg-white p-8 shadow-xl shadow-red-50">
-            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Identity Moderation</p>
-            <h3 className="mt-2 text-4xl font-black tracking-tight">Access Control Desk</h3>
+          <div className="rounded-[2.5rem] border border-red-100 bg-white p-7 shadow-xl shadow-red-50 md:p-8">
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
+              Identity Management Desk
+            </p>
+            <h3 className="mt-2 text-4xl font-black tracking-tight">
+              Visitor Status Lookup
+            </h3>
+
             <p className="mt-4 leading-7 text-neutral-600">
-              Enter a visitor's DID wallet address to look up their live status on the Blockchain. Buttons will adapt dynamically based on their current phase.
+              Admin checks a visitor wallet to manage identity status. Merchant access
+              checking is handled separately in the Merchant Verify Page.
             </p>
 
-            <div className="mt-8 space-y-4">
-              <div>
-                <label className="text-xs font-bold text-neutral-500">Target Visitor Wallet Address (0x...)</label>
-                <div className="mt-1 flex gap-3">
-                  <input 
-                    type="text" 
-                    placeholder="Enter 0x..." 
-                    value={targetWallet} 
-                    onChange={(e)=> {
-                      setTargetWallet(e.target.value);
-                      setCurrentOnChainStatus("None");
-                    }} 
-                    className="flex-1 rounded-xl border border-neutral-200 bg-[#fffaf8] p-3 outline-none focus:border-[#E30613] font-mono text-sm" 
-                  />
-                  <button 
-                    onClick={checkVisitorStatus}
-                    disabled={isSearching}
-                    className="rounded-xl bg-[#E30613] px-5 py-3 font-black text-white hover:bg-[#bd000a] disabled:opacity-50"
-                  >
-                    {isSearching ? "Searching..." : "Look up"}
-                  </button>
-                </div>
+            <div className="mt-8">
+              <label className="text-xs font-black uppercase tracking-[0.2em] text-neutral-400">
+                Target Visitor Wallet Address
+              </label>
+
+              <div className="mt-2 flex flex-col gap-3 md:flex-row">
+                <input
+                  type="text"
+                  placeholder="0x..."
+                  value={targetWallet}
+                  onChange={(event) => {
+                    setTargetWallet(event.target.value);
+                    setCurrentOnChainStatus("None");
+                    setLookupHash("");
+                  }}
+                  className="min-w-0 flex-1 rounded-2xl border border-neutral-200 bg-[#fffaf8] px-5 py-4 font-mono text-sm font-bold outline-none transition placeholder:text-neutral-400 focus:border-[#E30613] focus:bg-white focus:ring-4 focus:ring-red-50"
+                />
+
+                <button
+                  onClick={() => void checkVisitorStatus()}
+                  disabled={isSearching}
+                  className="rounded-2xl bg-[#E30613] px-6 py-4 font-black text-white shadow-xl shadow-red-100 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {isSearching ? "Searching..." : "Look up"}
+                </button>
               </div>
             </div>
 
-            {/* DYNAMIC BUTTON ZONE */}
-            <div className="mt-8 pt-6 border-t border-neutral-100">
-              <p className="text-xs font-black text-neutral-400 uppercase tracking-wider mb-4">Available Action</p>
+            <div className="mt-6 rounded-[1.7rem] border border-neutral-100 bg-[#fffaf8] p-5">
+              <p className="text-xs font-black uppercase tracking-[0.24em] text-neutral-400">
+                Lookup Result
+              </p>
 
-              {currentOnChainStatus === "None" && (
-                <div className="rounded-xl bg-neutral-50 border border-neutral-200 p-4 text-center text-sm font-bold text-neutral-400">
-                  Please perform a "Look up" to see available management actions.
+              <div className="mt-4 grid gap-4">
+                <ResultRow label="Status" value={currentOnChainStatus} strong />
+                <ResultRow
+                  label="Target DID"
+                  value={targetWallet ? makeDid(targetWallet) : "Waiting for lookup"}
+                />
+                <ResultRow
+                  label="Identity Hash"
+                  value={lookupHash || "No hash loaded"}
+                />
+              </div>
+            </div>
+
+            <div className="mt-6 border-t border-neutral-100 pt-6">
+              <p className="mb-4 text-xs font-black uppercase tracking-[0.24em] text-neutral-400">
+                Management Action
+              </p>
+
+              {currentOnChainStatus === "None" ? (
+                <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-5 text-center text-sm font-black text-neutral-400">
+                  Perform a lookup to see available actions.
                 </div>
-              )}
+              ) : null}
 
-              {currentOnChainStatus === "Pending" && (
-                <button 
-                  onClick={handleApproveIdentity} 
-                  className="w-full rounded-xl bg-green-600 py-4 font-black text-white shadow-xl transition hover:bg-green-700 shadow-green-50 text-center"
+              {currentOnChainStatus === "Pending" ? (
+                <button
+                  onClick={handleApproveIdentity}
+                  disabled={isApproving}
+                  className="w-full rounded-2xl bg-green-600 py-4 font-black text-white shadow-xl shadow-green-100 transition hover:-translate-y-0.5 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Approve Identity Request
+                  {isApproving ? "Approving..." : "Approve Visitor Identity"}
                 </button>
-              )}
+              ) : null}
 
-              {currentOnChainStatus === "Verified" && (
-                <button 
-                  onClick={handleRevokeIdentity} 
-                  className="w-full rounded-xl bg-[#111] py-4 font-black text-white shadow-xl transition hover:bg-[#E30613] shadow-red-50 text-center"
+              {currentOnChainStatus === "Verified" ? (
+                <button
+                  onClick={handleRevokeIdentity}
+                  disabled={isRevoking}
+                  className="w-full rounded-2xl bg-neutral-950 py-4 font-black text-white shadow-xl shadow-red-50 transition hover:-translate-y-0.5 hover:bg-[#E30613] disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Revoke Identity Access
+                  {isRevoking ? "Revoking..." : "Revoke Identity"}
                 </button>
-              )}
+              ) : null}
 
-              {currentOnChainStatus === "Revoked" && (
-                <button 
-                  onClick={handleApproveIdentity} 
-                  className="w-full rounded-xl bg-blue-600 py-4 font-black text-white shadow-xl transition hover:bg-blue-700 shadow-blue-50 text-center"
+              {currentOnChainStatus === "Revoked" ? (
+                <button
+                  onClick={handleApproveIdentity}
+                  disabled={isApproving}
+                  className="w-full rounded-2xl bg-blue-600 py-4 font-black text-white shadow-xl shadow-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  Re-Approve Identity (Lift Blacklist)
+                  {isApproving ? "Restoring..." : "Restore Visitor Identity"}
                 </button>
-              )}
+              ) : null}
             </div>
           </div>
+        </div>
+      </section>
 
+      <section className="mx-auto max-w-7xl px-6 pb-14">
+        <div className="grid gap-5 rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-xl shadow-red-50 md:grid-cols-3">
+          <StepCard
+            number="01"
+            title="Generate Hash"
+            description="Admin converts private visitor data into an identity hash."
+          />
+          <StepCard
+            number="02"
+            title="Register On-chain"
+            description="Only hash, wallet, and status are stored on the smart contract."
+          />
+          <StepCard
+            number="03"
+            title="Lookup / Revoke"
+            description="Admin can check status and revoke access when required."
+          />
         </div>
       </section>
     </main>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder: string;
+  mono?: boolean;
+}) {
+  return (
+    <div>
+      <label className="text-xs font-black uppercase tracking-[0.2em] text-neutral-400">
+        {label}
+      </label>
+      <input
+        type="text"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder={placeholder}
+        className={`mt-2 w-full rounded-2xl border border-neutral-200 bg-[#fffaf8] px-5 py-4 text-sm font-bold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-[#E30613] focus:bg-white focus:ring-4 focus:ring-red-50 ${
+          mono ? "font-mono" : ""
+        }`}
+      />
+    </div>
+  );
+}
+
+function ResultRow({
+  label,
+  value,
+  strong = false,
+}: {
+  label: string;
+  value: string;
+  strong?: boolean;
+}) {
+  return (
+    <div>
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+        {label}
+      </p>
+      <p
+        className={`mt-1 break-all ${
+          strong
+            ? "text-3xl font-black text-[#E30613]"
+            : "text-sm font-black text-neutral-900"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function StepCard({
+  number,
+  title,
+  description,
+}: {
+  number: string;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-[2rem] bg-[#fff4f1] p-6">
+      <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
+        {number}
+      </p>
+      <h3 className="mt-4 text-2xl font-black">{title}</h3>
+      <p className="mt-3 leading-7 text-neutral-600">{description}</p>
+    </div>
   );
 }

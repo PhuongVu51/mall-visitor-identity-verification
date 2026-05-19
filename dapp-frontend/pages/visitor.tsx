@@ -1,35 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
-import Link from "next/link";
+import { useRouter } from "next/router";
 import { ethers } from "ethers";
+import CryptoJS from "crypto-js";
 import contractABI from "../constants/contractABI.json";
 
-type EthereumRequestArgs = {
-  method: string;
-  params?: unknown[];
-};
-
-type EthereumProvider = {
-  request: <T = unknown>(args: EthereumRequestArgs) => Promise<T>;
-};
-
-declare global {
-  interface Window {
-    ethereum?: EthereumProvider;
-  }
-}
+type EthereumRequestArgs = { method: string; params?: unknown[] };
+type EthereumProvider = { request: <T = unknown>(args: EthereumRequestArgs) => Promise<T> };
+declare global { interface Window { ethereum?: EthereumProvider; } }
 
 type IdentityStatus = "Not Registered" | "Pending" | "Verified" | "Revoked";
-
-const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
 
 function shortenAddress(address: string) {
   if (!address) return "Not connected";
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
-
-function makeDid(address: string) {
-  if (!address) return "did:lotte:not-connected";
-  return `did:lotte:${address}`;
 }
 
 function getStatusStyle(status: IdentityStatus) {
@@ -40,33 +23,48 @@ function getStatusStyle(status: IdentityStatus) {
 }
 
 export default function VisitorWalletPage() {
+  const router = useRouter();
+  const [web2User, setWeb2User] = useState<any>(null);
+
+  // ⚠️ PASTE YOUR CONTRACT ADDRESS AND JWT HERE:
+  const contractAddress = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
+  const PINATA_JWT = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySW5mb3JtYXRpb24iOnsiaWQiOiI2Nzg3ZTE2MC0yZDExLTQ3MWQtYjU1ZS02OTJiMDc2ZGY2ZDEiLCJlbWFpbCI6InZ1cGh1b25nMDUwMTIwMDVAZ21haWwuY29tIiwiZW1haWxfdmVyaWZpZWQiOnRydWUsInBpbl9wb2xpY3kiOnsicmVnaW9ucyI6W3siZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiRlJBMSJ9LHsiZGVzaXJlZFJlcGxpY2F0aW9uQ291bnQiOjEsImlkIjoiTllDMSJ9XSwidmVyc2lvbiI6MX0sIm1mYV9lbmFibGVkIjpmYWxzZSwic3RhdHVzIjoiQUNUSVZFIn0sImF1dGhlbnRpY2F0aW9uVHlwZSI6InNjb3BlZEtleSIsInNjb3BlZEtleUtleSI6ImY1MjBlYTZkMjk1YjhkOGIzMjM0Iiwic2NvcGVkS2V5U2VjcmV0IjoiNjM3MTJiMzY4NTI0ZWU5OTI3NDFmODYwMjBlNGIwMmIxMzA3OWI1Y2RmOTM5Y2FlZTlhMDgzMjcyMzM2MTI4OSIsImV4cCI6MTgxMDY1Mzk3OX0.Qho2Ux0HFO6OWtRqua2Zoce6xAZC_5y6LMrCkwckv98";
+
+  // --- WEB3 STATES ---
   const [walletAddress, setWalletAddress] = useState("");
-  const [networkLabel, setNetworkLabel] = useState("Not connected");
-  const [statusMessage, setStatusMessage] = useState(
-    "Connect MetaMask to view your visitor digital identity."
-  );
+  const [statusMessage, setStatusMessage] = useState("Connect MetaMask to manage your digital identity.");
 
   const [onChainStatus, setOnChainStatus] = useState<IdentityStatus>("Not Registered");
   const [onChainHash, setOnChainHash] = useState("");
   const [onChainCid, setOnChainCid] = useState("");
   const [onChainDate, setOnChainDate] = useState("");
 
-  const did = useMemo(() => makeDid(walletAddress), [walletAddress]);
+  // --- REGISTER STATES ---
+  const [visitorName, setVisitorName] = useState("");
+  const [visitorPhone, setVisitorPhone] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [ipfsCID, setIpfsCID] = useState("");
+
   const currentAccess = ["Parking", "Event Desk", "Merchant Check"];
 
+  // 1. Check Web2 Session
   useEffect(() => {
-    const savedWallet = window.localStorage.getItem("lotte_wallet_address");
-    const savedNetwork = window.localStorage.getItem("lotte_network_label");
-
-    if (savedWallet) {
-      setWalletAddress(savedWallet);
-      setStatusMessage(`Wallet loaded from storage. Reconnect to sync Blockchain.`);
-      fetchOnChainIdentity(savedWallet);
+    const currentUser = window.localStorage.getItem("lotte_web2_user");
+    if (!currentUser) {
+      router.push("/");
+    } else {
+      const parsedUser = JSON.parse(currentUser);
+      setWeb2User(parsedUser);
+      if (parsedUser.name) setVisitorName(parsedUser.name);
+      if (parsedUser.phone) setVisitorPhone(parsedUser.phone);
     }
 
-    if (savedNetwork) setNetworkLabel(savedNetwork);
-  }, []);
+    // KHÔNG tự động lấy ví cũ từ localStorage nếu chưa thực sự kết nối ở phiên này
+    // Điều này giúp tránh việc UI bị nhận nhầm trạng thái khi chưa kết nối ví MetaMask
+    setWalletAddress(""); 
+  }, [router]);
 
+  // 2. Fetch Blockchain Data
   async function fetchOnChainIdentity(address: string) {
     try {
       if (!window.ethereum) return;
@@ -82,14 +80,10 @@ export default function VisitorWalletPage() {
 
       if (!hash || hash === "") {
         setOnChainStatus("Not Registered");
-        setOnChainHash("");
-        setOnChainCid("");
-        setOnChainDate("");
       } else {
         setOnChainHash(hash);
         setOnChainCid(cid);
         setOnChainDate(new Date(timestamp * 1000).toLocaleString());
-        
         if (revoked) setOnChainStatus("Revoked");
         else if (verified) setOnChainStatus("Verified");
         else setOnChainStatus("Pending");
@@ -99,184 +93,201 @@ export default function VisitorWalletPage() {
     }
   }
 
+  // 3. Connect Wallet
   async function connectWallet() {
     try {
-      if (!window.ethereum) {
-        setStatusMessage("MetaMask is not installed. Please install MetaMask first.");
-        return;
-      }
+      if (!window.ethereum) return setStatusMessage("❌ MetaMask is not installed.");
+      setStatusMessage("⏳ Connecting to MetaMask...");
+      
       const accounts = await window.ethereum.request<string[]>({ method: "eth_requestAccounts" });
       const selectedAccount = accounts[0];
-
-      if (!selectedAccount) {
-        setStatusMessage("No wallet account selected.");
-        return;
-      }
-
+      
       setWalletAddress(selectedAccount);
       window.localStorage.setItem("lotte_wallet_address", selectedAccount);
-
-      try {
-        const chainId = await window.ethereum.request<string>({ method: "eth_chainId" });
-        let resolvedNetwork = `Connected network: ${chainId}`;
-        if (chainId === "0x7a69") resolvedNetwork = "Hardhat Localhost";
-        if (chainId === "0xaa36a7") resolvedNetwork = "Sepolia Testnet";
-        setNetworkLabel(resolvedNetwork);
-        window.localStorage.setItem("lotte_network_label", resolvedNetwork);
-      } catch {
-        setNetworkLabel("MetaMask connected");
-      }
-
-      setStatusMessage(`Wallet connected: ${selectedAccount}`);
+      
+      setStatusMessage(`✅ Wallet connected: ${shortenAddress(selectedAccount)}`);
       await fetchOnChainIdentity(selectedAccount);
-    } catch {
-      setStatusMessage("Wallet connection was rejected or failed.");
+    } catch (err) {
+      setStatusMessage("❌ Wallet connection failed.");
     }
   }
+
+  // 4. Upload Image to IPFS (Pinata)
+  async function uploadToPinata() {
+    if (!selectedFile) return setStatusMessage("❌ Please select your identity portrait first.");
+    try {
+      setStatusMessage("⏳ Uploading profile image to decentralized IPFS network...");
+      const formData = new FormData();
+      formData.append("file", selectedFile);
+
+      const res = await fetch("https://api.pinata.cloud/pinning/pinFileToIPFS", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${PINATA_JWT}` },
+        body: formData,
+      });
+
+      const resData = await res.json();
+      if (resData.IpfsHash) {
+        setIpfsCID(resData.IpfsHash);
+        setStatusMessage("✅ IPFS upload successful! Ready to anchor.");
+      }
+    } catch (error: any) {
+      setStatusMessage("❌ Pinata Error: " + error.message);
+    }
+  }
+
+  // 5. Register to Smart Contract
+  async function registerWeb3Identity() {
+    if (!ipfsCID) {
+      setStatusMessage("❌ Please upload your image to IPFS before anchoring.");
+      return;
+    }
+    try {
+      if (!window.ethereum) return;
+      const provider = new ethers.BrowserProvider(window.ethereum as any);
+      const signer = await provider.getSigner();
+      const contract = new ethers.Contract(contractAddress, contractABI.abi, signer);
+      
+      const rawData = visitorName.trim() + visitorPhone.trim();
+      const hash = "0x" + CryptoJS.SHA256(rawData).toString();
+      
+      setStatusMessage("⏳ Anchoring your digital identity to Blockchain...");
+      const tx = await contract.registerIdentity(hash, ipfsCID);
+      await tx.wait();
+      
+      setStatusMessage("✅ DID created successfully! Awaiting Admin verification.");
+      await fetchOnChainIdentity(walletAddress);
+    } catch (err: any) {
+      setStatusMessage("❌ Blockchain Error: " + err.message);
+    }
+  }
+
+  const handleLogout = () => {
+    window.localStorage.removeItem("lotte_web2_user");
+    window.localStorage.removeItem("lotte_wallet_address");
+    router.push("/");
+  };
+
+  if (!web2User) return null;
 
   return (
     <main className="min-h-screen bg-[#fff8f6] text-[#151515]">
       <section className="relative overflow-hidden bg-gradient-to-br from-white via-[#fff4f1] to-[#ffe3df]">
         <div className="absolute left-[-160px] top-[-160px] h-[420px] w-[420px] rounded-full bg-[#E30613]/20 blur-3xl" />
-        <div className="absolute bottom-[-180px] right-[-120px] h-[480px] w-[480px] rounded-full bg-[#E30613]/25 blur-3xl" />
         
         <div className="relative mx-auto max-w-7xl px-6 py-7">
-          <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <Link href="/" className="flex items-center gap-4">
-              <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl">L</div>
+          {/* NAV BAR */}
+          <nav className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#E30613] text-2xl font-black text-white shadow-xl">L</div>
               <div>
-                <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">Lotte Mall West Lake</p>
-                <h1 className="text-xl font-black tracking-tight md:text-2xl">Visitor DID Wallet</h1>
+                <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">Lotte Mall Visitor</p>
+                <h1 className="text-lg font-black tracking-tight">Welcome, {web2User.name}</h1>
               </div>
-            </Link>
-
-            <div className="flex flex-wrap items-center gap-3">
-              <Link href="/" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Home</Link>
-              <Link href="/admin" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Admin Portal</Link>
-              <Link href="/verify" className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:border-[#E30613] hover:text-[#E30613]">Verify</Link>
-              <button onClick={connectWallet} className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#bd000a]">
-                Connect Wallet
-              </button>
             </div>
+            <button onClick={handleLogout} className="rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-black text-[#E30613] shadow-sm hover:bg-red-50">
+              Logout
+            </button>
           </nav>
 
-          <div className="grid gap-12 pb-16 pt-16 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-            <div>
-              <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm">
-                <span className="flex h-3 w-3 rounded-full bg-[#E30613]" /> Visitor Digital Identity
-              </div>
-              <h2 className="max-w-4xl text-5xl font-black leading-[0.98] tracking-[-0.055em] text-[#111] md:text-7xl">
-                Your mall identity, <span className="text-[#E30613]">without exposing private data.</span>
-              </h2>
-              <p className="mt-7 max-w-2xl text-lg leading-8 text-neutral-700 md:text-xl md:leading-9">
-                This page pulls real data from the Blockchain. Private details remain completely protected off-chain.
-              </p>
+          <div className="mt-12 mb-8 max-w-3xl">
+             <h2 className="text-4xl font-black md:text-6xl tracking-tight">Web3 <span className="text-[#E30613]">Identity Center.</span></h2>
+             <p className="mt-4 text-lg text-neutral-600">Link your personal MetaMask wallet to activate secure, decentralized mall access.</p>
+          </div>
 
-              <div className="mt-9 flex flex-wrap gap-4">
-                <button onClick={connectWallet} className="rounded-2xl bg-[#E30613] px-7 py-4 text-base font-black text-white shadow-2xl transition hover:-translate-y-1 hover:bg-[#bd000a]">
-                  Sync Wallet Data
-                </button>
-                <Link href="/verify" className="rounded-2xl border border-neutral-200 bg-white px-7 py-4 text-base font-black text-neutral-950 shadow-sm transition hover:-translate-y-1 hover:border-[#E30613] hover:text-[#E30613]">
-                  Test Verification Check
-                </Link>
-              </div>
+          <div className="mb-6 rounded-2xl border border-red-100 bg-white p-4 shadow-sm font-bold text-neutral-800">
+             🔔 System: {statusMessage}
+          </div>
 
-              <div className="mt-9 max-w-2xl rounded-[1.75rem] border border-red-100 bg-white/80 p-5 shadow-sm">
-                <p className="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">Visitor wallet status</p>
-                <p className="mt-2 break-all text-base font-bold text-neutral-900">{statusMessage}</p>
-              </div>
+          {/* SỬA LẠI ĐIỀU KIỆN RENDER CHUẨN XÁC NƠI NÀY */}
+          {!walletAddress || walletAddress === "" ? (
+            <div className="mt-6 p-8 rounded-[2rem] border border-red-100 bg-white max-w-md shadow-xl">
+              <h3 className="text-xl font-black mb-4">Wallet Connection Required</h3>
+              <p className="text-sm font-medium text-neutral-500 mb-6">Please link your MetaMask wallet first to access decentralized verification features.</p>
+              <button onClick={connectWallet} className="w-full rounded-2xl bg-[#E30613] py-4 text-base font-black text-white shadow-xl transition hover:-translate-y-0.5 hover:bg-[#bd000a]">
+                Connect MetaMask Wallet
+              </button>
             </div>
+          ) : (
+            <>
+              {/* CHỈ KHI ĐÃ CÓ WALLET ADDRESS MỚI XÉT ĐẾN TRẠNG THÁI TRÊN BLOCKCHAIN */}
+              {onChainStatus === "Not Registered" && (
+                <div className="mt-8 max-w-md animate-fade-in">
+                  <div className="rounded-[2rem] border border-red-100 bg-white p-8 shadow-xl">
+                    <h3 className="mb-2 text-2xl font-black text-[#E30613]">Create Lotte DID Card</h3>
+                    <p className="text-xs font-semibold text-neutral-400 mb-6 uppercase tracking-wider">Profile: {web2User.name}</p>
+                    
+                    <div className="space-y-6">
+                      <div>
+                        <label className="text-xs font-black text-neutral-500 uppercase tracking-wider block mb-2">Select Identity Portrait</label>
+                        <input type="file" onChange={(e) => setSelectedFile(e.target.files ? e.target.files[0] : null)} className="w-full rounded-xl border border-neutral-200 p-3 text-sm font-medium bg-[#fffaf8]" />
+                        
+                        <button onClick={uploadToPinata} className="w-full mt-3 rounded-xl bg-blue-600 py-3 text-sm font-black text-white hover:bg-blue-700 shadow-md">
+                          Generate IPFS CID
+                        </button>
+                        {ipfsCID && <p className="text-xs text-green-600 font-bold mt-2 truncate">CID: {ipfsCID}</p>}
+                      </div>
 
-            <div className="relative">
-              <div className="relative overflow-hidden rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-2xl">
-                <div className="rounded-[2rem] bg-gradient-to-br from-[#E30613] via-[#ce0010] to-[#790006] p-7 text-white">
-                  <div className="flex items-start justify-between gap-6">
-                    <div>
-                      <p className="text-xs font-black uppercase tracking-[0.32em] text-white/55">Lotte Visitor DID</p>
-                      <h3 className="mt-4 text-3xl font-black tracking-tight">{walletAddress ? "Digital Wallet Active" : "Wallet Required"}</h3>
+                      <button onClick={registerWeb3Identity} className="w-full rounded-xl bg-[#111] py-4 text-sm font-black text-white transition hover:bg-[#E30613] shadow-lg">
+                        Anchor Identity to Blockchain
+                      </button>
                     </div>
                   </div>
-                  <div className="mt-8 rounded-[1.5rem] bg-white/10 p-5 backdrop-blur flex flex-col gap-4">
-                    <IdentityRow label="Visitor DID" value={did} />
-                    <IdentityRow label="Wallet Address" value={walletAddress ? walletAddress : "..."} />
-                    <IdentityRow label="Identity Hash (On-Chain)" value={onChainHash || "No hash found"} />
-                    <IdentityRow label="Network" value={networkLabel} />
+                </div>
+              )}
+
+              {/* HỒ SƠ SAU KHI ĐĂNG KÝ XONG */}
+              {onChainStatus !== "Not Registered" && (
+                <div className="mt-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
+                  <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
+                    <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Visitor Profile</p>
+                    <h2 className="mt-2 text-3xl font-black tracking-tight">Identity Overview</h2>
+
+                    <div className="mt-6 space-y-4">
+                      <ProfileItem label="Linked Wallet Address" value={shortenAddress(walletAddress)} />
+                      <ProfileItem label="Issued At (Blockchain)" value={onChainDate} />
+                      
+                      {onChainCid && (
+                        <div className="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                          <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400 mb-2">Decentralized Portrait</p>
+                          <img src={`https://ipfs.io/ipfs/${onChainCid}`} alt="Visitor Avatar" className="w-full h-48 object-cover rounded-xl border border-red-200 shadow-sm" />
+                        </div>
+                      )}
+                    </div>
+
+                    <div className={`mt-6 rounded-3xl border p-5 ${getStatusStyle(onChainStatus)}`}>
+                      <p className="text-sm font-black uppercase tracking-[0.25em]">Verification Status</p>
+                      <p className="mt-2 text-3xl font-black">{onChainStatus}</p>
+                    </div>
+                  </div>
+
+                  <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
+                    <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Mall Access</p>
+                    <h2 className="mt-2 text-3xl font-black tracking-tight">Authorized Services</h2>
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-3">
+                      {currentAccess.map((item) => (
+                        <AccessCard key={item} title={item} status={onChainStatus === "Verified" ? "Available" : "Requires verification"} />
+                      ))}
+                    </div>
+
+                    <div className="mt-6 rounded-[2rem] bg-[#111] p-6 text-white">
+                      <p className="text-sm font-black uppercase tracking-[0.28em] text-white/45">Cryptography Security</p>
+                      <h3 className="mt-3 text-xl font-black">Identity Hash (On-Chain)</h3>
+                      <p className="mt-2 break-all font-mono text-sm text-white/70">{onChainHash}</p>
+                      <p className="mt-4 text-sm text-white/50">Your raw personal details are encrypted. Merchants can only verify the cryptographic hash and match your IPFS portrait locally.</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <section className="mx-auto grid max-w-7xl gap-6 px-6 py-14 lg:grid-cols-[0.85fr_1.15fr]">
-        <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-          <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Visitor profile</p>
-          <h2 className="mt-2 text-4xl font-black tracking-tight">Identity overview</h2>
-
-          <div className="mt-6 space-y-4">
-            <ProfileItem label="Visitor Name" value="*** Protected (Off-chain) ***" />
-            <ProfileItem label="Visitor Type" value="Lotte Mall Visitor" />
-            <ProfileItem label="Issued At (Blockchain)" value={onChainDate || "Waiting for registration"} />
-            <ProfileItem label="DID Format" value={`did:lotte:${walletAddress ? shortenAddress(walletAddress) : "..."}`} />
-            
-            {onChainCid && (
-              <div className="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
-                <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400 mb-2">Decentralized Portrait</p>
-                <img 
-                  src={`https://ipfs.io/ipfs/${onChainCid}`} 
-                  alt="Visitor Avatar" 
-                  className="w-full h-48 object-cover rounded-xl border border-red-200 shadow-sm"
-                />
-              </div>
-            )}
-          </div>
-
-          <div className={`mt-6 rounded-3xl border p-5 ${getStatusStyle(onChainStatus)}`}>
-            <p className="text-sm font-black uppercase tracking-[0.25em]">Current Status</p>
-            <p className="mt-2 text-3xl font-black">{onChainStatus}</p>
-          </div>
-        </div>
-
-        <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Mall access</p>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">Services linked to this DID</h2>
-            </div>
-          </div>
-
-          <div className="mt-6 grid gap-4 md:grid-cols-3">
-            {currentAccess.map((item) => (
-              <AccessCard
-                key={item}
-                title={item}
-                status={onChainStatus === "Verified" ? "Available" : "Requires verification"}
-              />
-            ))}
-          </div>
-
-          <div className="mt-6 rounded-[2rem] bg-[#111] p-6 text-white">
-            <p className="text-sm font-black uppercase tracking-[0.28em] text-white/45">Privacy note</p>
-            <h3 className="mt-3 text-2xl font-black">Personal information is hidden.</h3>
-            <p className="mt-4 leading-7 text-white/70">
-              As you can see, no raw data is pulled from the blockchain. Merchants only verify the Hash, IPFS photo, and your Verification Status.
-            </p>
-          </div>
+              )}
+            </>
+          )}
         </div>
       </section>
     </main>
   );
 }
 
-function IdentityRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-white/45">{label}</p>
-      <p className="mt-1 break-all text-sm font-bold text-white">{value}</p>
-    </div>
-  );
-}
 function ProfileItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
@@ -285,14 +296,15 @@ function ProfileItem({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
 function AccessCard({ title, status }: { title: string; status: string }) {
   return (
     <div className="rounded-[1.5rem] border border-red-100 bg-[#fffaf8] p-5">
       <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-2xl shadow-sm">
         {title.includes("Parking") ? "🅿️" : title.includes("Event") ? "🎟️" : "🏬"}
       </div>
-      <h3 className="mt-4 text-xl font-black">{title}</h3>
-      <p className={`mt-2 text-sm font-bold ${status === "Available" ? "text-green-600" : "text-[#E30613]"}`}>{status}</p>
+      <h3 className="mt-4 text-lg font-black">{title}</h3>
+      <p className={`mt-1 text-sm font-bold ${status === "Available" ? "text-green-600" : "text-[#E30613]"}`}>{status}</p>
     </div>
   );
 }

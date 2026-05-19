@@ -1,6 +1,7 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 import { useRouter } from "next/router";
 
 type UserRole = "visitor" | "admin" | "merchant";
@@ -402,7 +403,7 @@ export default function LoginPortal() {
                 />
                 <RoleButton
                   active={selectedRole === "merchant"}
-                  title="Merchant"
+                  title="Merchant Desk"
                   icon={<VerifyIcon />}
                   onClick={() => chooseRole("merchant")}
                 />
@@ -546,7 +547,7 @@ function RoleButton({
 }: {
   active: boolean;
   title: string;
-  icon: React.ReactNode;
+ icon: ReactNode;
   onClick: () => void;
 }) {
   return (
@@ -574,7 +575,7 @@ function InfoCard({
 }: {
   title: string;
   description: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <div className="rounded-[1.5rem] border border-red-100 bg-white/80 p-5 shadow-sm backdrop-blur">

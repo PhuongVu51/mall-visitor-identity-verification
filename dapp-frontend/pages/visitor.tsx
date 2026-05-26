@@ -51,12 +51,10 @@ type AuditLog = {
   time: string;
 };
 
-const CONTRACT_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
+const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const TX_LOG_KEY = "lotte_transaction_logs";
+const APPEALS_KEY = "lotte_admin_appeals";
 
-// Không hardcode Pinata JWT trực tiếp trong frontend.
-// Tạo file .env.local trong dapp-frontend và thêm:
-// NEXT_PUBLIC_PINATA_JWT=your_pinata_jwt_here
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT ?? "";
 
 const ACCESS_SERVICES = ["Parking", "Event Desk", "Merchant Check"];
@@ -178,6 +176,10 @@ export default function VisitorWalletPage() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [copiedDid, setCopiedDid] = useState(false);
 
+  const [appealReason, setAppealReason] = useState("");
+  const [isAppealing, setIsAppealing] = useState(false);
+  const [isAppealSubmitted, setIsAppealSubmitted] = useState(false);
+
   const did = useMemo(() => makeDid(walletAddress), [walletAddress]);
 
   const identityHashPreview = useMemo(() => {
@@ -210,6 +212,24 @@ export default function VisitorWalletPage() {
     const savedNetwork = window.localStorage.getItem("lotte_network_label");
     if (savedNetwork) setNetworkLabel(savedNetwork);
   }, [router]);
+
+  // Kiểm tra bộ nhớ tạm xem ví hiện tại đã từng nộp đơn khiếu nại chưa để khóa cứng giao diện
+  useEffect(() => {
+    if (walletAddress) {
+      try {
+        const existingAppealsRaw = window.localStorage.getItem(APPEALS_KEY);
+        if (existingAppealsRaw) {
+          const currentAppeals = JSON.parse(existingAppealsRaw);
+          const hasSubmitted = currentAppeals.some(
+            (a: any) => a.wallet.toLowerCase() === walletAddress.toLowerCase()
+          );
+          setIsAppealSubmitted(hasSubmitted);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+  }, [walletAddress]);
 
   async function fetchOnChainIdentity(address: string) {
     try {
@@ -305,9 +325,9 @@ export default function VisitorWalletPage() {
         if (chainId === "0x7a69") resolvedNetwork = "Hardhat Localhost";
         if (chainId === "0xaa36a7") resolvedNetwork = "Sepolia Testnet";
         if (chainId === "0x1") {
-  resolvedNetwork = "Ethereum Mainnet";
-  setStatusMessage("Wallet connected, but please switch to Hardhat Localhost or Sepolia for this demo.");
-}
+          resolvedNetwork = "Ethereum Mainnet";
+          setStatusMessage("Wallet connected, but please switch to Hardhat Localhost or Sepolia for this demo.");
+        }
 
         setNetworkLabel(resolvedNetwork);
         window.localStorage.setItem("lotte_network_label", resolvedNetwork);
@@ -472,6 +492,47 @@ export default function VisitorWalletPage() {
     setStatusMessage("Identity status synced.");
   }
 
+  const handleSubmitAppeal = () => {
+    if (!appealReason.trim()) {
+      setStatusMessage("Please clarify the reason for your account appeal case.");
+      return;
+    }
+    setIsAppealing(true);
+    try {
+      const existingAppealsRaw = window.localStorage.getItem(APPEALS_KEY);
+      const currentAppeals = existingAppealsRaw ? JSON.parse(existingAppealsRaw) : [];
+      
+      const newAppeal = {
+        id: `appeal-${Date.now()}`,
+        wallet: walletAddress,
+        name: web2User?.name || "Visitor User",
+        reason: appealReason.trim(),
+        time: new Date().toLocaleString()
+      };
+      
+      window.localStorage.setItem(APPEALS_KEY, JSON.stringify([newAppeal, ...currentAppeals]));
+      
+      // ✅ ĐÃ THÊM: Ghi vết hành động nộp đơn khiếu nại vào đồng bộ bảng Compliance Board / Audit Log tổng
+      appendAuditLog({
+        id: `audit-appeal-${Date.now()}`,
+        action: "Appeal Transmitted",
+        walletOrDid: did,
+        status: "Pending Review",
+        txHash: createDemoTxHash(`${walletAddress}-appeal`),
+        time: new Date().toLocaleString()
+      });
+
+      setAppealReason("");
+      setIsAppealSubmitted(true);
+      setStatusMessage("✅ Appeal case registered. System Admin will evaluate your deployment validity parameters.");
+    } catch (e) {
+      console.error(e);
+      setStatusMessage("Failed to log account resolution form parameters.");
+    } finally {
+      setIsAppealing(false);
+    }
+  };
+
   function handleLogout() {
     window.localStorage.removeItem("lotte_web2_user");
     window.localStorage.removeItem("lotte_wallet_address");
@@ -485,7 +546,7 @@ export default function VisitorWalletPage() {
       <section className="relative overflow-hidden bg-gradient-to-br from-white via-[#fff4f1] to-[#ffe3df]">
         <div className="absolute left-[-160px] top-[-160px] h-[420px] w-[420px] rounded-full bg-[#E30613]/20 blur-3xl" />
         <div className="absolute bottom-[-180px] right-[-120px] h-[500px] w-[500px] rounded-full bg-[#E30613]/25 blur-3xl" />
-        <div className="absolute right-[10%] top-28 hidden h-44 w-44 rotate-12 rounded-[3.5rem] bg-[#E30613]/10 lg:block" />
+        <div className="absolute right-[10%] top-28 hidden h-44 w-44 rotate-12 rounded-[3rem] bg-[#E30613]/10 lg:block" />
 
         <div className="relative mx-auto max-w-7xl px-6 py-7">
           <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
@@ -510,6 +571,13 @@ export default function VisitorWalletPage() {
                 className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]"
               >
                 Check My DID
+              </Link>
+
+              <Link
+                href="/transactions"
+                className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]"
+              >
+                Audit Log
               </Link>
 
               <button
@@ -762,6 +830,42 @@ export default function VisitorWalletPage() {
                   {getStatusDescription(onChainStatus)}
                 </p>
               </div>
+
+              {/* ✅ ĐÃ SỬA: Logic kiểm tra khóa form 1 lần duy nhất sau khi nhấn Submit giải trình */}
+              {onChainStatus === "Revoked" && (
+                <div className="mt-6 rounded-[2rem] border border-red-200 bg-red-50/40 p-5">
+                  <label className="block text-xs font-black uppercase tracking-[0.22em] text-red-700">
+                    File Appeal / Report Case to Admin
+                  </label>
+                  
+                  {isAppealSubmitted ? (
+                    // Trạng thái khóa giao diện: Ẩn form nhập và hiện thông báo đợi Admin xem xét yêu cầu
+                    <div className="mt-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-center font-bold text-amber-700 text-sm leading-6">
+                      ⏳ Your account statement has been registered! Please wait for Lotte Mall Admin review to re-evaluate configuration status.
+                    </div>
+                  ) : (
+                    // Trạng thái ban đầu: Cho phép nhập văn bản giải trình và nhấn nút gửi đi
+                    <>
+                      <p className="mt-1 text-xs font-semibold text-neutral-500 leading-5">
+                        Your wallet parameters have been flagged. If you think this is a deployment logic error, write down your reason statement to Lotte Management Board.
+                      </p>
+                      <textarea
+                        value={appealReason}
+                        onChange={(e) => setAppealReason(e.target.value)}
+                        placeholder="Enter your explanation line (e.g., Please review my portrait data proof...)"
+                        className="mt-3 w-full h-24 rounded-2xl border border-red-200 bg-white p-4 text-sm font-medium text-neutral-800 outline-none focus:ring-4 focus:ring-red-100 resize-none"
+                      />
+                      <button
+                        onClick={handleSubmitAppeal}
+                        disabled={isAppealing}
+                        className="mt-3 w-full rounded-2xl bg-[#E30613] py-3.5 text-center text-xs font-black uppercase tracking-wider text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#bd000a]"
+                      >
+                        {isAppealing ? "Transmitting form..." : "Submit Appeal Data Form"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
@@ -806,7 +910,7 @@ export default function VisitorWalletPage() {
                 </p>
 
                 <h3 className="mt-3 text-2xl font-black">
-                  Private data is not shown to merchants.
+                  Private data is not stored directly on-chain.
                 </h3>
 
                 <p className="mt-4 leading-7 text-white/70">

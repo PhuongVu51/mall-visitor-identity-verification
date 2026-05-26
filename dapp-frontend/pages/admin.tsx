@@ -50,13 +50,23 @@ type TransactionLog = {
   time: string;
 };
 
+type AppealTicket = {
+  id: string;
+  wallet: string;
+  name: string;
+  reason: string;
+  time: string;
+};
+
 declare global {
   interface Window {
     ethereum?: EthereumProvider;
   }
 }
 
-const CONTRACT_ADDRESS = "0x610178dA211FEF7D417bC0e6FeD39F05609AD788";
+const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const STORAGE_KEY = "lotte_transaction_logs";
+const APPEALS_KEY = "lotte_admin_appeals";
 
 function shortenAddress(address: string) {
   if (!address) return "Not connected";
@@ -94,7 +104,7 @@ function isValidSession(value: string | null) {
 }
 
 function parseIdentityResult(data: unknown): IdentityLookupResult {
-  if (!Array.isArray(data)) {
+  if (!data || !Array.isArray(data) || data[0] === undefined) {
     return {
       hash: "",
       verified: false,
@@ -103,21 +113,19 @@ function parseIdentityResult(data: unknown): IdentityLookupResult {
     };
   }
 
-  const hashValue = data[0];
-  const verifiedValue = data[3];
-  const revokedValue = data[4];
-
-  const hash = typeof hashValue === "string" ? hashValue : "";
-  const verified = Boolean(verifiedValue);
-  const revoked = Boolean(revokedValue);
+  const hash = data[0] ? String(data[0]).trim() : "";
+  const verified = Boolean(data[3]);
+  const revoked = Boolean(data[4]);
 
   let status: IdentityStatus = "None";
 
-  if (hash && revoked) {
+  if (!hash || hash === "0x" || hash === "0x0000000000000000000000000000000000000000000000000000000000000000") {
+    status = "None";
+  } else if (revoked) {
     status = "Revoked";
-  } else if (hash && verified) {
+  } else if (verified) {
     status = "Verified";
-  } else if (hash) {
+  } else {
     status = "Pending";
   }
 
@@ -131,7 +139,7 @@ function parseIdentityResult(data: unknown): IdentityLookupResult {
 
 function readLogs(): TransactionLog[] {
   try {
-    const raw = window.localStorage.getItem("lotte_transaction_logs");
+    const raw = window.localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
 
     const parsed = JSON.parse(raw) as unknown;
@@ -143,9 +151,7 @@ function readLogs(): TransactionLog[] {
       const log = item as Partial<TransactionLog>;
 
       return (
-        typeof log.id === "string" &&
         typeof log.action === "string" &&
-        typeof log.wallet === "string" &&
         typeof log.status === "string" &&
         typeof log.txHash === "string" &&
         typeof log.time === "string"
@@ -160,12 +166,12 @@ function saveLog(log: Omit<TransactionLog, "id" | "time">) {
   const nextLog: TransactionLog = {
     ...log,
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    time: new Date().toLocaleString(),
+    time: new Date().toLocaleTimeString(),
   };
 
   const currentLogs = readLogs();
   window.localStorage.setItem(
-    "lotte_transaction_logs",
+    STORAGE_KEY,
     JSON.stringify([nextLog, ...currentLogs].slice(0, 20)),
   );
 }
@@ -196,6 +202,9 @@ export default function AdminPortal() {
   const [isSearching, setIsSearching] = useState(false);
   const [isApproving, setIsApproving] = useState(false);
   const [isRevoking, setIsRevoking] = useState(false);
+
+  // ✅ ĐÃ THÊM: State lưu vết đơn khiếu nại tìm thấy của địa chỉ ví đang tra cứu
+  const [activeAppeal, setActiveAppeal] = useState<AppealTicket | null>(null);
 
   const didPreview = useMemo(() => makeDid(visitorWallet), [visitorWallet]);
 
@@ -286,6 +295,7 @@ export default function AdminPortal() {
     setTargetWallet(visitorWallet.trim());
     setCurrentOnChainStatus("None");
     setLookupHash("");
+    setActiveAppeal(null);
 
     setStatusMessage("Identity hash generated. Ready to register on blockchain.");
     setIsGenerating(false);
@@ -361,19 +371,23 @@ export default function AdminPortal() {
       setLookupHash(parsed.hash);
       setCurrentOnChainStatus(parsed.status);
 
+      // ✅ ĐÃ THÊM: Quét tìm đơn khiếu nại của địa chỉ ví này trong LocalStorage để hiển thị trực tiếp
+      const appealsRaw = window.localStorage.getItem(APPEALS_KEY);
+      if (appealsRaw) {
+        const parsedAppeals = JSON.parse(appealsRaw) as AppealTicket[];
+        const found = parsedAppeals.find(a => a.wallet.toLowerCase() === walletToCheck.toLowerCase());
+        setActiveAppeal(found || null);
+      } else {
+        setActiveAppeal(null);
+      }
+
       if (parsed.status === "None") {
         setStatusMessage("No registered identity found for this wallet.");
-      }
-
-      if (parsed.status === "Pending") {
+      } else if (parsed.status === "Pending") {
         setStatusMessage("Identity found. Current status: Pending approval.");
-      }
-
-      if (parsed.status === "Verified") {
+      } else if (parsed.status === "Verified") {
         setStatusMessage("Identity found. Current status: Verified.");
-      }
-
-      if (parsed.status === "Revoked") {
+      } else if (parsed.status === "Revoked") {
         setStatusMessage("Identity found. Current status: Revoked.");
       }
 
@@ -415,14 +429,25 @@ export default function AdminPortal() {
       const tx = await contract.verifyIdentity(targetWallet.trim());
       await tx.wait();
 
+      setStatusMessage("Identity approved successfully.");
+      
+      // ✅ ĐÃ THÊM: Ghi log khôi phục từ đơn khiếu nại nếu tài khoản trước đó là Revoked
       saveLog({
-        action: "Approve Identity",
+        action: currentOnChainStatus === "Revoked" ? "Appeal Approved / Restore" : "Approve Identity",
         wallet: targetWallet.trim(),
-        status: "Success",
+        status: "Verified",
         txHash: tx.hash,
       });
 
-      setStatusMessage("Identity approved successfully.");
+      // Xóa đơn khiếu nại đã giải quyết xong khỏi danh sách đệm
+      const appealsRaw = window.localStorage.getItem(APPEALS_KEY);
+      if (appealsRaw) {
+        const parsedAppeals = JSON.parse(appealsRaw) as AppealTicket[];
+        const updated = parsedAppeals.filter(a => a.wallet.toLowerCase() !== targetWallet.trim().toLowerCase());
+        window.localStorage.setItem(APPEALS_KEY, JSON.stringify(updated));
+      }
+      setActiveAppeal(null);
+
       await checkVisitorStatus(targetWallet.trim());
     } catch (error) {
       setStatusMessage(`Approve failed: ${getErrorMessage(error)}`);
@@ -456,14 +481,13 @@ export default function AdminPortal() {
       const tx = await contract.revokeIdentity(targetWallet.trim());
       await tx.wait();
 
+      setStatusMessage("Identity status updated to REVOKED.");
       saveLog({
         action: "Revoke Identity",
         wallet: targetWallet.trim(),
-        status: "Success",
+        status: "Revoked",
         txHash: tx.hash,
       });
-
-      setStatusMessage("Identity revoked successfully.");
       await checkVisitorStatus(targetWallet.trim());
     } catch (error) {
       setStatusMessage(`Revoke failed: ${getErrorMessage(error)}`);
@@ -471,6 +495,32 @@ export default function AdminPortal() {
       setIsRevoking(false);
     }
   }
+
+  // ✅ ĐÃ THÊM: Hàm bác bỏ đơn khiếu nại (Keep Revoked) và lưu log hệ thống công khai
+  const handleRejectAppeal = () => {
+    if (!targetWallet.trim()) return;
+    try {
+      // Ghi log từ chối khiếu nại vào Audit Trail tổng
+      saveLog({
+        action: "Appeal Rejected / Keep Revoked",
+        wallet: targetWallet.trim(),
+        status: "Revoked",
+        txHash: "compliance-lock",
+      });
+
+      // Xóa đơn khiếu nại vì Admin đã đưa ra phán quyết giữ nguyên lệnh cấm
+      const appealsRaw = window.localStorage.getItem(APPEALS_KEY);
+      if (appealsRaw) {
+        const parsedAppeals = JSON.parse(appealsRaw) as AppealTicket[];
+        const updated = parsedAppeals.filter(a => a.wallet.toLowerCase() !== targetWallet.trim().toLowerCase());
+        window.localStorage.setItem(APPEALS_KEY, JSON.stringify(updated));
+      }
+      setActiveAppeal(null);
+      setStatusMessage("🚫 Appeal statement rejected. Cryptographic profile parameters remain locked.");
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   function handleUseVisitorWallet() {
     if (!visitorWallet.trim()) {
@@ -481,6 +531,7 @@ export default function AdminPortal() {
     setTargetWallet(visitorWallet.trim());
     setCurrentOnChainStatus("None");
     setLookupHash("");
+    setActiveAppeal(null);
     setStatusMessage("Visitor wallet copied to lookup desk.");
   }
 
@@ -520,7 +571,7 @@ export default function AdminPortal() {
 
         <div className="relative mx-auto max-w-7xl px-6 py-7">
           <nav className="flex flex-col gap-5 md:flex-row md:items-center md:justify-between">
-            <Link href="/" className="flex items-center gap-4">
+            <Link href="/" className="group flex items-center gap-4">
               <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200">
                 L
               </div>
@@ -535,13 +586,6 @@ export default function AdminPortal() {
             </Link>
 
             <div className="flex flex-wrap items-center gap-3">
-              <Link
-                href="/verify"
-                className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-[#E30613] hover:text-[#E30613]"
-              >
-                Merchant Verify Page
-              </Link>
-
               <Link
                 href="/transactions"
                 className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-[#E30613] hover:text-[#E30613]"
@@ -578,8 +622,7 @@ export default function AdminPortal() {
               </div>
 
               <h2 className="mt-6 max-w-5xl text-5xl font-black leading-[0.98] tracking-[-0.055em] text-[#111] md:text-7xl">
-                Register and manage{" "}
-                <span className="text-[#E30613]">visitor identity.</span>
+                Register and manage <span className="text-[#E30613]">visitor identity.</span>
               </h2>
 
               <p className="mt-6 max-w-2xl text-lg leading-8 text-neutral-700">
@@ -597,7 +640,8 @@ export default function AdminPortal() {
                   statusMessage.toLowerCase().includes("failed") ||
                   statusMessage.toLowerCase().includes("invalid") ||
                   statusMessage.toLowerCase().includes("not installed") ||
-                  statusMessage.toLowerCase().includes("does not expose")
+                  statusMessage.toLowerCase().includes("does not expose") ||
+                  statusMessage.toLowerCase().includes("flagged")
                     ? "text-red-600"
                     : "text-green-700"
                 }`}
@@ -720,6 +764,7 @@ export default function AdminPortal() {
             ) : null}
           </div>
 
+          {/* KHU VỰC DESK TRA CỨU: Tích hợp nội dung đơn khiếu nại của Visitor vào thẳng Lookup Result */}
           <div className="rounded-[2.5rem] border border-red-100 bg-white p-7 shadow-xl shadow-red-50 md:p-8">
             <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
               Identity Management Desk
@@ -747,6 +792,7 @@ export default function AdminPortal() {
                     setTargetWallet(event.target.value);
                     setCurrentOnChainStatus("None");
                     setLookupHash("");
+                    setActiveAppeal(null);
                   }}
                   className="min-w-0 flex-1 rounded-2xl border border-neutral-200 bg-[#fffaf8] px-5 py-4 font-mono text-sm font-bold outline-none transition placeholder:text-neutral-400 focus:border-[#E30613] focus:bg-white focus:ring-4 focus:ring-red-50"
                 />
@@ -776,6 +822,21 @@ export default function AdminPortal() {
                   label="Identity Hash"
                   value={lookupHash || "No hash loaded"}
                 />
+
+                {/* ✅ ĐÃ THÊM: Hiển thị Statement khiếu nại ngay trong hộp tra cứu nếu tìm thấy đơn khớp địa chỉ ví */}
+                {activeAppeal && (
+                  <div className="mt-2 rounded-2xl border border-dashed border-red-200 bg-red-50/30 p-4">
+                    <p className="text-xs font-black uppercase tracking-[0.22em] text-red-600">
+                      ⚠️ Active Appeal Reason Statement
+                    </p>
+                    <p className="mt-2 text-sm font-bold text-neutral-800 bg-white px-3 py-2 rounded-xl border border-neutral-100">
+                      "{activeAppeal.reason}"
+                    </p>
+                    <p className="mt-1.5 text-[10px] font-bold text-neutral-400 text-right">
+                      Transmitted: {activeAppeal.time}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -790,35 +851,47 @@ export default function AdminPortal() {
                 </div>
               ) : null}
 
-              {currentOnChainStatus === "Pending" ? (
+              {currentOnChainStatus === "Pending" && (
                 <button
                   onClick={handleApproveIdentity}
                   disabled={isApproving}
-                  className="w-full rounded-2xl bg-green-600 py-4 font-black text-white shadow-xl shadow-green-100 transition hover:-translate-y-0.5 hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-2xl bg-green-600 py-4 font-black text-white shadow-xl shadow-green-100 transition hover:-translate-y-0.5 hover:bg-green-700"
                 >
                   {isApproving ? "Approving..." : "Approve Visitor Identity"}
                 </button>
-              ) : null}
+              )}
 
-              {currentOnChainStatus === "Verified" ? (
+              {currentOnChainStatus === "Verified" && (
                 <button
                   onClick={handleRevokeIdentity}
                   disabled={isRevoking}
-                  className="w-full rounded-2xl bg-neutral-950 py-4 font-black text-white shadow-xl shadow-red-50 transition hover:-translate-y-0.5 hover:bg-[#E30613] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-2xl bg-neutral-950 py-4 font-black text-white shadow-xl shadow-red-50 transition hover:-translate-y-0.5 hover:bg-[#E30613]"
                 >
                   {isRevoking ? "Revoking..." : "Revoke Identity"}
                 </button>
-              ) : null}
+              )}
 
-              {currentOnChainStatus === "Revoked" ? (
-                <button
-                  onClick={handleApproveIdentity}
-                  disabled={isApproving}
-                  className="w-full rounded-2xl bg-blue-600 py-4 font-black text-white shadow-xl shadow-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {isApproving ? "Restoring..." : "Restore Visitor Identity"}
-                </button>
-              ) : null}
+              {/* ✅ ĐÃ SỬA: Luồng quyết định kép (Restore hoặc Keep Revoked) khi xem xét tài khoản bị khiếu nại cấm sóng */}
+              {currentOnChainStatus === "Revoked" && (
+                <div className="grid gap-3">
+                  <button
+                    onClick={handleApproveIdentity}
+                    disabled={isApproving}
+                    className="w-full rounded-2xl bg-blue-600 py-4 font-black text-white shadow-xl shadow-blue-100 transition hover:-translate-y-0.5 hover:bg-blue-700"
+                  >
+                    {isApproving ? "Restoring..." : "Restore Visitor Identity"}
+                  </button>
+                  
+                  {activeAppeal && (
+                    <button
+                      onClick={handleRejectAppeal}
+                      className="w-full rounded-2xl border border-neutral-200 bg-neutral-50 py-3 text-sm font-black text-neutral-500 transition hover:bg-red-50 hover:text-red-600 hover:border-red-200"
+                    >
+                      Keep Account Revoked
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>

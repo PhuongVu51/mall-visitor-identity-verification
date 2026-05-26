@@ -54,6 +54,7 @@ type AuditLog = {
 const CONTRACT_ADDRESS = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
 const TX_LOG_KEY = "lotte_transaction_logs";
 const APPEALS_KEY = "lotte_admin_appeals";
+const PARKING_REQ_KEY = "lotte_parking_requests";
 
 const PINATA_JWT = process.env.NEXT_PUBLIC_PINATA_JWT ?? "";
 
@@ -180,6 +181,10 @@ export default function VisitorWalletPage() {
   const [isAppealing, setIsAppealing] = useState(false);
   const [isAppealSubmitted, setIsAppealSubmitted] = useState(false);
 
+  const [merchantReportReason, setMerchantReportReason] = useState("");
+  const [parkingReqStatus, setParkingReqStatus] = useState<"idle" | "sent" | "approved" | "rejected">("idle");
+  const [verificationPin, setVerificationPin] = useState("");
+
   const did = useMemo(() => makeDid(walletAddress), [walletAddress]);
 
   const identityHashPreview = useMemo(() => {
@@ -213,7 +218,6 @@ export default function VisitorWalletPage() {
     if (savedNetwork) setNetworkLabel(savedNetwork);
   }, [router]);
 
-  // Kiểm tra bộ nhớ tạm xem ví hiện tại đã từng nộp đơn khiếu nại chưa để khóa cứng giao diện
   useEffect(() => {
     if (walletAddress) {
       try {
@@ -224,6 +228,19 @@ export default function VisitorWalletPage() {
             (a: any) => a.wallet.toLowerCase() === walletAddress.toLowerCase()
           );
           setIsAppealSubmitted(hasSubmitted);
+        }
+
+        const reportsRaw = window.localStorage.getItem("lotte_merchant_reports");
+        if (reportsRaw) {
+          const found = JSON.parse(reportsRaw).find((r: any) => r.wallet.toLowerCase() === walletAddress.toLowerCase());
+          if (found) setMerchantReportReason(found.reason);
+        }
+
+        const currentReqs = JSON.parse(window.localStorage.getItem(PARKING_REQ_KEY) || "[]");
+        const foundReq = currentReqs.find((r: any) => r.wallet.toLowerCase() === walletAddress.toLowerCase());
+        if (foundReq) {
+          setParkingReqStatus(foundReq.status);
+          setVerificationPin(foundReq.pin || "");
         }
       } catch (e) {
         console.error(e);
@@ -324,10 +341,6 @@ export default function VisitorWalletPage() {
 
         if (chainId === "0x7a69") resolvedNetwork = "Hardhat Localhost";
         if (chainId === "0xaa36a7") resolvedNetwork = "Sepolia Testnet";
-        if (chainId === "0x1") {
-          resolvedNetwork = "Ethereum Mainnet";
-          setStatusMessage("Wallet connected, but please switch to Hardhat Localhost or Sepolia for this demo.");
-        }
 
         setNetworkLabel(resolvedNetwork);
         window.localStorage.setItem("lotte_network_label", resolvedNetwork);
@@ -489,6 +502,11 @@ export default function VisitorWalletPage() {
 
     setStatusMessage("Syncing latest identity status from blockchain...");
     await fetchOnChainIdentity(walletAddress);
+
+    const currentReqs = JSON.parse(window.localStorage.getItem(PARKING_REQ_KEY) || "[]");
+    const foundReq = currentReqs.find((r: any) => r.wallet.toLowerCase() === walletAddress.toLowerCase());
+    if (foundReq) setParkingReqStatus(foundReq.status);
+
     setStatusMessage("Identity status synced.");
   }
 
@@ -512,7 +530,6 @@ export default function VisitorWalletPage() {
       
       window.localStorage.setItem(APPEALS_KEY, JSON.stringify([newAppeal, ...currentAppeals]));
       
-      // ✅ ĐÃ THÊM: Ghi vết hành động nộp đơn khiếu nại vào đồng bộ bảng Compliance Board / Audit Log tổng
       appendAuditLog({
         id: `audit-appeal-${Date.now()}`,
         action: "Appeal Transmitted",
@@ -530,6 +547,35 @@ export default function VisitorWalletPage() {
       setStatusMessage("Failed to log account resolution form parameters.");
     } finally {
       setIsAppealing(false);
+    }
+  };
+
+  const handleRequestServiceCheck = () => {
+    if (!walletAddress) { setStatusMessage("Please connect wallet first."); return; }
+    if (onChainStatus !== "Verified") { setStatusMessage("❌ Tài khoản phải VERIFIED mới có thể check-in."); return; }
+
+    try {
+      const generatedPin = String(Math.floor(1000 + Math.random() * 9000));
+      const currentReqs = JSON.parse(window.localStorage.getItem(PARKING_REQ_KEY) || "[]");
+      const filtered = currentReqs.filter((r: any) => r.wallet.toLowerCase() !== walletAddress.toLowerCase());
+      
+      const newReq = {
+        id: `req-${Date.now()}`,
+        wallet: walletAddress,
+        name: visitorName,
+        ipfsCid: onChainCid,
+        service: "Parking Gate",
+        status: "sent",
+        pin: generatedPin,
+        time: new Date().toLocaleTimeString()
+      };
+
+      window.localStorage.setItem(PARKING_REQ_KEY, JSON.stringify([newReq, ...filtered]));
+      setVerificationPin(generatedPin);
+      setParkingReqStatus("sent");
+      setStatusMessage(`📡 Đã phát tín hiệu check-in. Hãy cung cấp mã PIN ${generatedPin} cho nhân viên.`);
+    } catch (err) {
+      console.error(err);
     }
   };
 
@@ -554,7 +600,6 @@ export default function VisitorWalletPage() {
               <div className="flex h-14 w-14 items-center justify-center rounded-[1.35rem] bg-[#E30613] text-3xl font-black text-white shadow-xl shadow-red-200 transition-transform group-hover:scale-105">
                 L
               </div>
-
               <div>
                 <p className="text-xs font-black uppercase tracking-[0.35em] text-[#E30613]">
                   Lotte Mall West Lake
@@ -572,29 +617,23 @@ export default function VisitorWalletPage() {
               >
                 Check My DID
               </Link>
-
               <Link
                 href="/transactions"
                 className="rounded-full border border-red-100 bg-white/80 px-5 py-3 text-sm font-black text-neutral-800 shadow-sm transition hover:border-[#E30613] hover:text-[#E30613]"
               >
                 Audit Log
               </Link>
-
               <button
                 onClick={connectWallet}
-                disabled={isConnecting}
-                className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:cursor-not-allowed disabled:opacity-70"
+                className="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5"
               >
-                {walletAddress
-                  ? shortenAddress(walletAddress)
-                  : isConnecting
-                    ? "Connecting..."
-                    : "Connect Wallet"}
+                {walletAddress ? shortenAddress(walletAddress) : "Connect Wallet"}
               </button>
-
+              
+              {/* ✅ GIỮ NGUYÊN NÚT LOGOUT GỐC THEO ẢNH CHỤP MÀN HÌNH CỦA BẠN */}
               <button
                 onClick={handleLogout}
-                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm transition hover:bg-neutral-200 hover:text-neutral-800"
+                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm transition hover:bg-neutral-200"
               >
                 Logout
               </button>
@@ -607,48 +646,28 @@ export default function VisitorWalletPage() {
                 <span className="h-3 w-3 rounded-full bg-[#E30613]" />
                 Visitor Digital Identity
               </div>
-
               <h2 className="max-w-4xl text-5xl font-black leading-[0.98] tracking-[-0.055em] md:text-7xl">
-                Your mall identity,{" "}
-                <span className="text-[#E30613]">
-                  without exposing private data.
-                </span>
+                Your mall identity, <span className="text-[#E30613]">without exposing private data.</span>
               </h2>
-
               <p className="mt-7 max-w-2xl text-lg leading-8 text-neutral-700">
                 Connect your wallet, create a visitor DID request, and use it for
                 mall-wide verification after Lotte Mall Admin approval.
               </p>
 
               <div className="mt-8 flex flex-wrap gap-3">
-                <button
-                  onClick={connectWallet}
-                  disabled={isConnecting}
-                  className="rounded-2xl bg-[#E30613] px-6 py-4 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:opacity-70"
-                >
-                  {walletAddress ? "Reconnect Wallet" : "Connect MetaMask"}
+                <button onClick={connectWallet} className="rounded-2xl bg-[#E30613] px-6 py-4 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5">
+                  Connect MetaMask
                 </button>
-
-                <button
-                  onClick={copyDid}
-                  className="rounded-2xl border border-red-100 bg-white px-6 py-4 text-sm font-black text-[#E30613] shadow-sm transition hover:-translate-y-0.5 hover:border-[#E30613]"
-                >
+                <button onClick={copyDid} className="rounded-2xl border border-red-100 bg-white px-6 py-4 text-sm font-black text-[#E30613] shadow-sm transition hover:-translate-y-0.5">
                   {copiedDid ? "DID Copied" : "Copy DID"}
                 </button>
-
-                <button
-                  onClick={syncIdentity}
-                  disabled={isSyncing || !walletAddress}
-                  className="rounded-2xl border border-neutral-200 bg-white px-6 py-4 text-sm font-black text-neutral-900 shadow-sm transition hover:-translate-y-0.5 hover:border-[#E30613] hover:text-[#E30613] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isSyncing ? "Syncing..." : "Sync Status"}
+                <button onClick={syncIdentity} disabled={!walletAddress} className="rounded-2xl border border-neutral-200 bg-white px-6 py-4 text-sm font-black text-neutral-900 shadow-sm transition hover:-translate-y-0.5">
+                  Sync Status
                 </button>
               </div>
 
               <div className="mt-8 rounded-[1.75rem] border border-red-100 bg-white p-5 shadow-sm">
-                <p className="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">
-                  System Message
-                </p>
+                <p className="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">System Message</p>
                 <p className="mt-2 font-bold text-neutral-900">{statusMessage}</p>
               </div>
             </div>
@@ -657,39 +676,21 @@ export default function VisitorWalletPage() {
               <div className="rounded-[2rem] bg-gradient-to-br from-[#E30613] via-[#ce0010] to-[#790006] p-7 text-white">
                 <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
                   <div>
-                    <p className="text-xs font-black uppercase tracking-[0.32em] text-white/55">
-                      Lotte Visitor DID Card
-                    </p>
-                    <h3 className="mt-4 text-3xl font-black tracking-tight">
-                      {walletAddress ? "Digital Wallet Active" : "Wallet Required"}
-                    </h3>
+                    <p className="text-xs font-black uppercase opacity-60 tracking-widest">Lotte Visitor DID Card</p>
+                    <h3 className="mt-4 text-3xl font-black tracking-tight">{walletAddress ? "Digital Wallet Active" : "Wallet Required"}</h3>
                   </div>
-
                   <div className="rounded-2xl bg-white/15 px-4 py-3 text-right">
-                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/50">
-                      Status
-                    </p>
-                    <p className="mt-1 text-sm font-black text-white">
-                      {onChainStatus}
-                    </p>
+                    <p className="text-xs font-black uppercase tracking-[0.2em] text-white/50">Status</p>
+                    <p className="mt-1 text-sm font-black text-white">{onChainStatus}</p>
                   </div>
                 </div>
 
                 <div className="mt-8 grid gap-4 rounded-[1.5rem] bg-white/10 p-5 backdrop-blur">
                   <IdentityRow label="Visitor DID" value={did} />
-                  <IdentityRow
-                    label="Wallet Address"
-                    value={walletAddress || "Not connected"}
-                  />
+                  <IdentityRow label="Wallet Address" value={walletAddress || "Not connected"} />
                   <IdentityRow label="Network" value={networkLabel} />
-                  <IdentityRow
-                    label="Identity Hash"
-                    value={onChainHash || identityHashPreview}
-                  />
-                  <IdentityRow
-                    label="IPFS CID"
-                    value={onChainCid || ipfsCID || "No portrait uploaded yet"}
-                  />
+                  <IdentityRow label="Identity Hash" value={onChainHash || identityHashPreview} />
+                  <IdentityRow label="IPFS CID" value={onChainCid || ipfsCID || "No portrait uploaded yet"} />
                 </div>
               </div>
 
@@ -706,23 +707,10 @@ export default function VisitorWalletPage() {
       {!walletAddress ? (
         <section className="mx-auto max-w-7xl px-6 py-14">
           <div className="rounded-[2.5rem] border border-red-100 bg-white p-8 shadow-xl shadow-red-50">
-            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-              Step 01
-            </p>
-            <h2 className="mt-2 text-4xl font-black tracking-tight">
-              Connect wallet first.
-            </h2>
-            <p className="mt-4 max-w-2xl leading-7 text-neutral-600">
-              Your wallet address becomes your simplified decentralized identity
-              inside this prototype.
-            </p>
-
-            <button
-              onClick={connectWallet}
-              disabled={isConnecting}
-              className="mt-7 rounded-2xl bg-[#E30613] px-7 py-4 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5 hover:bg-[#bd000a] disabled:opacity-70"
-            >
-              {isConnecting ? "Connecting..." : "Connect MetaMask Wallet"}
+            <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Step 01</p>
+            <h2 className="mt-2 text-4xl font-black tracking-tight">Connect wallet first.</h2>
+            <button onClick={connectWallet} className="mt-7 rounded-2xl bg-[#E30613] px-7 py-4 text-sm font-black text-white shadow-xl shadow-red-200 transition hover:-translate-y-0.5">
+              Connect MetaMask Wallet
             </button>
           </div>
         </section>
@@ -730,18 +718,8 @@ export default function VisitorWalletPage() {
         <section className="mx-auto max-w-7xl px-6 py-14">
           <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
             <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-                Create Request
-              </p>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">
-                Create Lotte DID request.
-              </h2>
-
-              <p className="mt-4 leading-7 text-neutral-600">
-                Upload your portrait to IPFS, then create an on-chain identity
-                request. Lotte Mall Admin will review and approve it.
-              </p>
-
+              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Create Request</p>
+              <h2 className="mt-2 text-4xl font-black tracking-tight">Create Lotte DID request.</h2>
               <div className="mt-6 space-y-4">
                 <ProfileItem label="Visitor Name" value={visitorName} />
                 <ProfileItem label="Phone Number" value={visitorPhone || "Not provided"} />
@@ -751,44 +729,13 @@ export default function VisitorWalletPage() {
             </div>
 
             <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-                Identity Proof
-              </p>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">
-                IPFS portrait + hash.
-              </h2>
-
-              <label className="mt-6 block">
-                <span className="text-sm font-black text-neutral-700">
-                  Select identity portrait
-                </span>
-
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handleFileChange}
-                  className="mt-2 w-full rounded-2xl border border-neutral-200 bg-[#fffaf8] px-4 py-3 text-sm font-bold outline-none transition focus:border-[#E30613]"
-                />
-              </label>
-
+              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Identity Proof</p>
+              <h2 className="mt-2 text-4xl font-black tracking-tight">IPFS portrait + hash.</h2>
+              <input type="file" accept="image/*" onChange={handleFileChange} className="mt-2 w-full rounded-2xl border border-neutral-200 bg-[#fffaf8] px-4 py-3 text-sm font-bold outline-none" />
               <div className="mt-5 grid gap-3 md:grid-cols-2">
-                <button
-                  onClick={uploadToPinata}
-                  disabled={isUploading || !selectedFile}
-                  className="rounded-2xl bg-blue-600 px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isUploading ? "Uploading..." : "Generate IPFS CID"}
-                </button>
-
-                <button
-                  onClick={registerWeb3Identity}
-                  disabled={isRegistering || !ipfsCID}
-                  className="rounded-2xl bg-[#111] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#E30613] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isRegistering ? "Anchoring..." : "Anchor DID Request"}
-                </button>
+                <button onClick={uploadToPinata} disabled={!selectedFile} className="rounded-2xl bg-blue-600 px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5">Generate IPFS CID</button>
+                <button onClick={registerWeb3Identity} disabled={!ipfsCID} className="rounded-2xl bg-[#111] px-5 py-4 text-sm font-black text-white shadow-md transition hover:-translate-y-0.5">Anchor DID Request</button>
               </div>
-
               <div className="mt-6 rounded-[2rem] border border-neutral-100 bg-[#fffaf8] p-5">
                 <ResultRow label="Generated Hash Preview" value={identityHashPreview} />
                 <ResultRow label="IPFS CID" value={ipfsCID || "No CID generated yet"} />
@@ -800,68 +747,36 @@ export default function VisitorWalletPage() {
         <section className="mx-auto max-w-7xl px-6 py-14">
           <div className="grid gap-6 lg:grid-cols-[0.85fr_1.15fr]">
             <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-                Visitor Profile
-              </p>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">
-                Identity overview.
-              </h2>
-
+              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Visitor Profile</p>
+              <h2 className="mt-2 text-4xl font-black tracking-tight">Identity overview.</h2>
               <div className="mt-6 space-y-4">
                 <ProfileItem label="Visitor Name" value={web2User.name} />
                 <ProfileItem label="Visitor DID" value={did} />
                 <ProfileItem label="Linked Wallet" value={walletAddress} />
-                <ProfileItem
-                  label="Issued At"
-                  value={onChainDate || "Waiting for blockchain timestamp"}
-                />
               </div>
 
-              <div
-                className={`mt-6 rounded-3xl border p-5 ${getStatusStyle(
-                  onChainStatus,
-                )}`}
-              >
-                <p className="text-sm font-black uppercase tracking-[0.25em]">
-                  Verification Status
-                </p>
+              <div className={`mt-6 rounded-3xl border p-5 ${getStatusStyle(onChainStatus)}`}>
+                <p className="text-sm font-black uppercase tracking-[0.25em]">Verification Status</p>
                 <p className="mt-2 text-3xl font-black">{onChainStatus}</p>
-                <p className="mt-3 text-sm font-bold opacity-80">
-                  {getStatusDescription(onChainStatus)}
-                </p>
+                <p className="mt-3 text-sm font-bold opacity-80">{getStatusDescription(onChainStatus)}</p>
               </div>
 
-              {/* ✅ ĐÃ SỬA: Logic kiểm tra khóa form 1 lần duy nhất sau khi nhấn Submit giải trình */}
               {onChainStatus === "Revoked" && (
                 <div className="mt-6 rounded-[2rem] border border-red-200 bg-red-50/40 p-5">
-                  <label className="block text-xs font-black uppercase tracking-[0.22em] text-red-700">
-                    File Appeal / Report Case to Admin
-                  </label>
-                  
+                  <label className="block text-xs font-black uppercase tracking-[0.22em] text-red-700">File Appeal / Report Case to Admin</label>
                   {isAppealSubmitted ? (
-                    // Trạng thái khóa giao diện: Ẩn form nhập và hiện thông báo đợi Admin xem xét yêu cầu
                     <div className="mt-4 p-4 rounded-xl border border-amber-200 bg-amber-50 text-center font-bold text-amber-700 text-sm leading-6">
-                      ⏳ Your account statement has been registered! Please wait for Lotte Mall Admin review to re-evaluate configuration status.
+                      ⏳ Your account statement has been registered! Please wait for Lotte Mall Admin review to re-evaluate status.
                     </div>
                   ) : (
-                    // Trạng thái ban đầu: Cho phép nhập văn bản giải trình và nhấn nút gửi đi
                     <>
-                      <p className="mt-1 text-xs font-semibold text-neutral-500 leading-5">
-                        Your wallet parameters have been flagged. If you think this is a deployment logic error, write down your reason statement to Lotte Management Board.
-                      </p>
-                      <textarea
-                        value={appealReason}
-                        onChange={(e) => setAppealReason(e.target.value)}
-                        placeholder="Enter your explanation line (e.g., Please review my portrait data proof...)"
-                        className="mt-3 w-full h-24 rounded-2xl border border-red-200 bg-white p-4 text-sm font-medium text-neutral-800 outline-none focus:ring-4 focus:ring-red-100 resize-none"
-                      />
-                      <button
-                        onClick={handleSubmitAppeal}
-                        disabled={isAppealing}
-                        className="mt-3 w-full rounded-2xl bg-[#E30613] py-3.5 text-center text-xs font-black uppercase tracking-wider text-white shadow-md transition hover:-translate-y-0.5 hover:bg-[#bd000a]"
-                      >
-                        {isAppealing ? "Transmitting form..." : "Submit Appeal Data Form"}
-                      </button>
+                      {merchantReportReason && (
+                        <p className="mb-3 text-xs font-bold text-red-700 bg-red-50 p-3 rounded-xl border border-red-100">
+                          <strong>Reason for Lock:</strong> "{merchantReportReason}"
+                        </p>
+                      )}
+                      <textarea value={appealReason} onChange={(e) => setAppealReason(e.target.value)} placeholder="Enter your explanation line..." className="mt-3 w-full h-24 rounded-2xl border border-red-200 bg-white p-4 text-sm font-medium text-neutral-800 outline-none resize-none" />
+                      <button onClick={handleSubmitAppeal} className="mt-3 w-full rounded-2xl bg-[#E30613] py-3.5 text-center text-xs font-black uppercase tracking-wider text-white shadow-md transition hover:-translate-y-0.5">Submit Appeal Data Form</button>
                     </>
                   )}
                 </div>
@@ -869,80 +784,57 @@ export default function VisitorWalletPage() {
             </div>
 
             <div className="rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-sm">
-              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-                Mall Access
-              </p>
-              <h2 className="mt-2 text-4xl font-black tracking-tight">
-                Services linked to this DID.
-              </h2>
+              <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">Mall Access</p>
+              <h2 className="mt-2 text-4xl font-black tracking-tight">Services linked to this DID.</h2>
 
               <div className="mt-6 grid gap-4 md:grid-cols-3">
                 {ACCESS_SERVICES.map((service) => (
-                  <AccessCard
-                    key={service}
-                    title={service}
-                    status={getAccessStatus(onChainStatus)}
-                  />
+                  <AccessCard key={service} title={service} status={getAccessStatus(onChainStatus)} />
                 ))}
               </div>
 
+              {onChainStatus === "Verified" && (
+                <div className="mt-6 rounded-[2rem] border border-blue-100 bg-blue-50/20 p-5 shadow-sm">
+                  <h3 className="text-xs font-black uppercase text-blue-900 tracking-wider">⚡ Lotte Smart Access Portal Check-In</h3>
+                  <p className="text-[11px] font-medium text-neutral-500 mt-1">Gửi tín hiệu check-in kèm mã PIN đối soát 4 chữ số bảo mật để chống việc hệ thống bị duyệt nhầm.</p>
+                  <div className="mt-3">
+                    {parkingReqStatus === "idle" && (
+                      <button onClick={handleRequestServiceCheck} className="w-full rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase py-2.5 tracking-wider shadow-sm">
+                        Request Station Check-In
+                      </button>
+                    )}
+                    {parkingReqStatus === "sent" && (
+                      <div className="p-3 bg-yellow-50 border border-yellow-200 text-center rounded-xl">
+                        <p className="text-[10px] font-bold text-yellow-800">📡 Signal broadcasted successfully. Mã PIN:</p>
+                        <div className="mt-1 bg-white px-4 py-1.5 inline-block rounded-lg border text-base font-black text-[#E30613] tracking-widest">{verificationPin}</div>
+                      </div>
+                    )}
+                    {parkingReqStatus === "approved" && (
+                      <div className="p-3 bg-green-50 border border-green-200 text-green-800 text-center font-bold text-xs rounded-xl">
+                        ✅ Approved! Quầy dịch vụ xác thực thành công, mời bạn vào sảnh.
+                        <button onClick={() => setParkingReqStatus("idle")} className="block mx-auto mt-1 text-[10px] underline font-black text-green-700">Tạo phiên mới</button>
+                      </div>
+                    )}
+                    {parkingReqStatus === "rejected" && (
+                      <div className="p-3 bg-red-50 border border-red-200 text-red-800 text-center font-bold text-xs rounded-xl">
+                        ❌ Refused. Thử lại hoặc đồng bộ lại ví.
+                        <button onClick={() => setParkingReqStatus("idle")} className="block mx-auto mt-1 text-[10px] underline font-black text-green-700">Thử lại</button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {onChainCid ? (
                 <div className="mt-6 rounded-[2rem] border border-red-100 bg-[#fffaf8] p-5">
-                  <p className="text-sm font-black uppercase tracking-[0.28em] text-[#E30613]">
-                    IPFS Portrait
-                  </p>
-
-                  <img
-                    src={`https://ipfs.io/ipfs/${onChainCid}`}
-                    alt="Visitor portrait"
-                    className="mt-4 h-56 w-full rounded-2xl border border-red-100 object-cover shadow-sm"
-                  />
-
-                  <p className="mt-3 break-all text-xs font-bold text-neutral-500">
-                    CID: {onChainCid}
-                  </p>
+                  <p className="text-sm font-black uppercase tracking-[0.28em] text-[#E30613]">IPFS Portrait</p>
+                  <img src={`https://ipfs.io/ipfs/${onChainCid}`} alt="Visitor portrait" className="mt-4 h-56 w-full rounded-2xl border border-red-100 object-cover shadow-sm" />
                 </div>
               ) : null}
-
-              <div className="mt-6 rounded-[2rem] bg-[#111] p-6 text-white">
-                <p className="text-sm font-black uppercase tracking-[0.28em] text-white/45">
-                  Privacy Note
-                </p>
-
-                <h3 className="mt-3 text-2xl font-black">
-                  Private data is not stored directly on-chain.
-                </h3>
-
-                <p className="mt-4 leading-7 text-white/70">
-                  Your raw personal details are not stored directly on-chain. The
-                  blockchain stores only the identity hash, IPFS CID, wallet
-                  address, and verification status.
-                </p>
-              </div>
             </div>
           </div>
         </section>
       )}
-
-      <section className="mx-auto max-w-7xl px-6 pb-16">
-        <div className="grid gap-6 rounded-[2.5rem] border border-red-100 bg-white p-6 shadow-xl shadow-red-50 lg:grid-cols-3">
-          <StepCard
-            number="01"
-            title="Connect wallet"
-            description="Visitor connects MetaMask. The wallet address becomes the DID."
-          />
-          <StepCard
-            number="02"
-            title="Create DID request"
-            description="Visitor uploads portrait to IPFS and anchors identity hash on-chain."
-          />
-          <StepCard
-            number="03"
-            title="Wait for approval"
-            description="Lotte Mall Admin approves the request before merchants grant access."
-          />
-        </div>
-      </section>
     </main>
   );
 }
@@ -950,9 +842,7 @@ export default function VisitorWalletPage() {
 function IdentityRow({ label, value }: { label: string; value: string }) {
   return (
     <div>
-      <p className="text-xs font-black uppercase tracking-[0.24em] text-white/45">
-        {label}
-      </p>
+      <p className="text-xs font-black uppercase tracking-[0.24em] text-white/45">{label}</p>
       <p className="mt-1 break-all text-sm font-bold text-white">{value}</p>
     </div>
   );
@@ -961,9 +851,7 @@ function IdentityRow({ label, value }: { label: string; value: string }) {
 function MiniCard({ title, value }: { title: string; value: string }) {
   return (
     <div className="rounded-2xl bg-[#fff4f1] p-4">
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
-        {title}
-      </p>
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">{title}</p>
       <p className="mt-2 break-words text-lg font-black text-[#111]">{value}</p>
     </div>
   );
@@ -972,25 +860,8 @@ function MiniCard({ title, value }: { title: string; value: string }) {
 function ProfileItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
-        {label}
-      </p>
-      <p className="mt-2 break-all text-base font-black text-neutral-950">
-        {value}
-      </p>
-    </div>
-  );
-}
-
-function ResultRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="mb-4 last:mb-0">
-      <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
-        {label}
-      </p>
-      <p className="mt-2 break-all font-mono text-sm font-black text-neutral-950">
-        {value}
-      </p>
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">{label}</p>
+      <p className="mt-2 break-all text-base font-black text-neutral-950">{value}</p>
     </div>
   );
 }
@@ -998,91 +869,17 @@ function ResultRow({ label, value }: { label: string; value: string }) {
 function AccessCard({ title, status }: { title: string; status: string }) {
   return (
     <div className="rounded-[1.5rem] border border-red-100 bg-[#fffaf8] p-5">
-      <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#E30613] shadow-sm">
-        <AccessIcon title={title} />
-      </div>
-
-      <h3 className="mt-4 text-lg font-black">{title}</h3>
-
-      <p
-        className={`mt-2 text-sm font-bold ${
-          status === "Available" ? "text-green-600" : "text-[#E30613]"
-        }`}
-      >
-        {status}
-      </p>
+      <h3 className="text-lg font-black">{title}</h3>
+      <p className={`mt-2 text-sm font-bold ${status === "Available" ? "text-green-600" : "text-[#E30613]"}`}>{status}</p>
     </div>
   );
 }
 
-function AccessIcon({ title }: { title: string }) {
-  if (title.includes("Parking")) {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <rect x="5" y="3" width="14" height="18" rx="3" />
-        <path d="M10 17V7h4a3 3 0 0 1 0 6h-4" />
-      </svg>
-    );
-  }
-
-  if (title.includes("Event")) {
-    return (
-      <svg
-        viewBox="0 0 24 24"
-        className="h-5 w-5"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2.3"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2a2 2 0 0 0 0 4v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 0 0-4V8Z" />
-        <path d="M13 6v12" />
-      </svg>
-    );
-  }
-
+function ResultRow({ label, value }: { label: string; value: string }) {
   return (
-    <svg
-      viewBox="0 0 24 24"
-      className="h-5 w-5"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2.3"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M4 21h16" />
-      <path d="M6 21V9l6-4 6 4v12" />
-      <path d="M9 21v-6h6v6" />
-    </svg>
-  );
-}
-
-function StepCard({
-  number,
-  title,
-  description,
-}: {
-  number: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-[2rem] bg-[#fff4f1] p-6">
-      <p className="text-sm font-black uppercase tracking-[0.3em] text-[#E30613]">
-        {number}
-      </p>
-      <h3 className="mt-4 text-2xl font-black">{title}</h3>
-      <p className="mt-3 leading-7 text-neutral-600">{description}</p>
+    <div className="mb-4 last:mb-0">
+      <p className="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">{label}</p>
+      <p className="mt-2 break-all font-mono text-sm font-black text-neutral-950">{value}</p>
     </div>
   );
 }

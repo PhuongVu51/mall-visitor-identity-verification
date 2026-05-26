@@ -1,9 +1,12 @@
+"use client";
+
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { ethers } from "ethers";
 import contractABI from "../constants/contractABI.json";
 
 const contractAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
+const PARKING_REQ_KEY = "lotte_parking_requests";
 
 type VerificationResult = "idle" | "verified" | "denied" | "pending" | "revoked";
 
@@ -178,11 +181,23 @@ export default function VerifyPage() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [accessReady, setAccessReady] = useState(false);
 
+  // States mở rộng quản lý khiếu nại và hàng đợi PIN đối soát chéo hai chiều
+  const [reportReason, setReportReason] = useState("");
+  const [isReporting, setIsReporting] = useState(false);
+  const [parkingRequests, setParkingRequests] = useState<any[]>([]);
+  const [enteredPins, setEnteredPins] = useState<{ [key: string]: string }>({});
+  const [unlockedRequests, setUnlockedRequests] = useState<{ [key: string]: boolean }>({});
+
   const activeRoleLabel = useMemo(() => {
     if (!session) return "Checking Access";
     if (session.role === "admin") return "Lotte Mall Admin Preview";
     return "Merchant / Service Desk";
   }, [session]);
+
+  const loadRequests = () => {
+    const reqs = JSON.parse(window.localStorage.getItem(PARKING_REQ_KEY) || "[]");
+    setParkingRequests(reqs);
+  };
 
   useEffect(() => {
     const currentSession = safeParseSession(
@@ -200,17 +215,21 @@ export default function VerifyPage() {
     }
 
     setSession(currentSession);
-    setAccessReady(true);
+    accessReady === false && setAccessReady(true);
+
+    loadRequests();
+    const interval = setInterval(loadRequests, 2000);
 
     if (currentSession.role === "admin") {
       setMessage(
         "Admin preview mode. This page shows how merchant desks verify visitor access.",
       );
-      return;
+    } else {
+      setMessage("Enter visitor DID or Wallet Address to verify access.");
     }
 
-    setMessage("Enter visitor DID or Wallet Address to verify access.");
-  }, []);
+    return () => clearInterval(interval);
+  }, [accessReady, session]);
 
   function pasteMyWallet() {
     const savedWallet = window.localStorage.getItem("lotte_wallet_address");
@@ -231,6 +250,7 @@ export default function VerifyPage() {
     setVisitorDid("");
     setVisitorHash("");
     setVisitorCid("");
+    setReportReason("");
     setMessage(
       session?.role === "admin"
         ? "Admin preview mode. This page shows how merchant desks verify visitor access."
@@ -342,6 +362,62 @@ export default function VerifyPage() {
     }
   }
 
+  const handleVerifyPinCode = (wallet: string, correctPin: string) => {
+    const inputPin = enteredPins[wallet] || "";
+    if (inputPin.trim() === correctPin.trim()) {
+      setUnlockedRequests(prev => ({ ...prev, [wallet]: true }));
+    } else {
+      alert("❌ Mã PIN đối soát không chính xác! Vui lòng kiểm tra lại màn hình của khách hàng.");
+    }
+  };
+
+  const handleActionParking = (reqWallet: string, serviceName: string, statusDecision: "approved" | "rejected") => {
+    const currentReqs = JSON.parse(window.localStorage.getItem(PARKING_REQ_KEY) || "[]");
+    const updated = currentReqs.map((r: any) => {
+      if (r.wallet.toLowerCase() === reqWallet.toLowerCase()) {
+        return { ...r, status: statusDecision };
+      }
+      return r;
+    });
+
+    window.localStorage.setItem(PARKING_REQ_KEY, JSON.stringify(updated));
+    setParkingRequests(updated);
+
+    appendAuditLog({
+      id: `check-${Date.now()}`,
+      action: `${serviceName} Checked`,
+      walletOrDid: makeDid(reqWallet),
+      status: statusDecision === "approved" ? "Success" : "Denied",
+      txHash: createDemoTxHash(`${reqWallet}-${Date.now()}`),
+      time: new Date().toLocaleString()
+    });
+
+    setUnlockedRequests(prev => ({ ...prev, [reqWallet]: false }));
+    setEnteredPins(prev => ({ ...prev, [reqWallet]: "" }));
+  };
+
+  const handleRequestRevoke = () => {
+    if (!reportReason.trim() || !visitorWallet) return;
+    setIsReporting(true);
+    try {
+      const reports = JSON.parse(window.localStorage.getItem("lotte_merchant_reports") || "[]");
+      reports.unshift({ wallet: visitorWallet, reason: reportReason.trim(), merchant: session?.email, time: new Date().toLocaleString() });
+      window.localStorage.setItem("lotte_merchant_reports", JSON.stringify(reports));
+
+      appendAuditLog({ 
+        id: `rep-${Date.now()}`,
+        action: "Merchant Report Issued", 
+        walletOrDid: makeDid(visitorWallet), 
+        status: "Flagged Suspicious", 
+        txHash: createDemoTxHash(`${visitorWallet}-rep`), 
+        time: new Date().toLocaleString() 
+      });
+
+      alert("✅ Revocation request transmitted successfully to Admin compliance trail.");
+      setReportReason("");
+    } catch { } finally { setIsReporting(false); }
+  };
+
   function handleLogout() {
     window.localStorage.removeItem("lotte_web2_user");
     window.location.href = "/";
@@ -401,9 +477,10 @@ export default function VerifyPage() {
                 Audit Log
               </Link>
 
+              {/* ✅ ĐÃ KHÔI PHỤC: Trả lại nút bấm Logout nguyên bản lên thanh công cụ đầu trang */}
               <button
                 onClick={handleLogout}
-                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm transition hover:bg-neutral-200 hover:text-neutral-800"
+                className="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm transition hover:bg-neutral-200"
               >
                 Logout
               </button>
@@ -412,7 +489,7 @@ export default function VerifyPage() {
 
           <div className="grid gap-10 pb-16 pt-16 lg:grid-cols-[0.9fr_1.1fr] lg:items-center">
             <div>
-              <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm">
+              <div className="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm tracking-wide">
                 <span className="h-3 w-3 rounded-full bg-[#E30613]" />
                 {activeRoleLabel}
               </div>
@@ -523,6 +600,29 @@ export default function VerifyPage() {
                   </div>
                 ) : null}
 
+                {/* Form gửi yêu cầu report cho Admin được giữ nguyên */}
+                {result === "verified" && visitorWallet && (
+                  <div className="mt-5 pt-4 border-t border-dashed border-neutral-200">
+                    <label className="block text-xs font-black uppercase tracking-[0.22em] text-red-600">
+                      Report Malicious Activity Case
+                    </label>
+                    <input
+                      type="text"
+                      value={reportReason}
+                      onChange={(e) => setReportReason(e.target.value)}
+                      placeholder="Specify infraction reason..."
+                      className="mt-2 w-full rounded-xl border p-2.5 text-xs font-bold outline-none bg-white border-neutral-200"
+                    />
+                    <button
+                      onClick={handleRequestRevoke}
+                      disabled={isReporting}
+                      className="w-full bg-red-600 text-white font-black text-[10px] uppercase py-2 rounded-lg mt-2 tracking-widest transition hover:bg-red-700 shadow-sm"
+                    >
+                      {isReporting ? "Transmitting..." : "🚨 Request Admin Revoke"}
+                    </button>
+                  </div>
+                )}
+
                 {result !== "idle" && visitorCid ? (
                   <div className="mt-5">
                     <p className="mb-2 text-xs font-black uppercase tracking-[0.2em] text-neutral-400">
@@ -540,6 +640,59 @@ export default function VerifyPage() {
                 ) : null}
               </div>
             </div>
+          </div>
+        </div>
+      </section>
+
+      {/* HÀNG ĐỢI KIỂM SOÁT THỜI GIAN THỰC ĐA DỊCH VỤ CỦA MERCHANT */}
+      <section className="mx-auto max-w-7xl px-6 py-6">
+        <div className="bg-white border border-red-100 p-6 rounded-[2.5rem] shadow-xl shadow-red-50">
+          <h2 className="text-xl font-black text-blue-900 flex items-center gap-2">📡 Real-Time Service Check-In Stream</h2>
+          <p className="text-xs font-semibold text-neutral-500 mt-1">Hàng đợi tiếp nhận yêu cầu định danh từ xa. Nhân viên quầy bắt buộc nhập mã PIN để mở khóa danh tính đối soát chân dung.</p>
+          
+          <div className="mt-6 space-y-4 max-h-[500px] overflow-y-auto pr-2">
+            {parkingRequests.length === 0 ? (
+              <div className="text-center py-12 font-bold text-neutral-400 border border-dashed rounded-2xl bg-neutral-50/50 text-xs">Không có tín hiệu check-in nào trong hàng đợi.</div>
+            ) : (
+              parkingRequests.map((req) => {
+                const isUnlocked = unlockedRequests[req.wallet] || false;
+                return (
+                  <div key={req.id} className="border border-neutral-100 p-5 rounded-2xl bg-[#fffaf8] flex flex-col gap-3 shadow-sm">
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="bg-blue-100 text-blue-800 text-[9px] font-black px-2 py-0.5 rounded border">🎯 Destination: {req.service}</span>
+                        <p className="font-mono text-[10px] font-bold text-neutral-500 mt-2 break-all">Ví: {req.wallet}</p>
+                      </div>
+                      <span className={`text-[10px] font-black px-2 py-0.5 rounded uppercase ${req.status === "sent" ? "bg-amber-100 text-amber-800" : req.status === "approved" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800"}`}>{req.status}</span>
+                    </div>
+
+                    {req.status === "sent" && !isUnlocked && (
+                      <div className="bg-white p-3 rounded-xl border border-neutral-200">
+                        <label className="block text-[9px] font-black uppercase text-neutral-400">Enter Secure Verification PIN Code</label>
+                        <div className="flex gap-2 mt-1.5">
+                          <input type="text" maxLength={4} placeholder="PIN Code" value={enteredPins[req.wallet] || ""} onChange={(e) => setEnteredPins({ ...enteredPins, [req.wallet]: e.target.value })} className="flex-1 border rounded-lg px-3 py-1.5 text-center font-mono font-black text-sm bg-neutral-50 outline-none" />
+                          <button onClick={() => handleVerifyPinCode(req.wallet, req.pin)} className="bg-neutral-900 text-white font-black text-xs px-4 rounded-lg uppercase">Unlock</button>
+                        </div>
+                      </div>
+                    )}
+
+                    {isUnlocked && req.status === "sent" && (
+                      <div className="bg-white p-3 rounded-xl border border-green-200 animate-fadeIn">
+                        <p className="text-[10px] font-black text-green-600 uppercase">✓ PIN Success — Identity Proof Match:</p>
+                        <div className="flex gap-3 items-center mt-2">
+                          <img src={`https://ipfs.io/ipfs/${req.ipfsCid}`} className="h-16 w-16 object-cover rounded-xl border" />
+                          <p className="text-[10px] font-bold text-neutral-800">Khách hàng: {req.name}</p>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 mt-3">
+                          <button onClick={() => handleActionParking(req.wallet, req.service, "approved")} className="bg-green-600 text-white font-black text-xs py-2 rounded-lg uppercase shadow-sm">Approve</button>
+                          <button onClick={() => handleActionParking(req.wallet, req.service, "rejected")} className="border text-neutral-600 font-black text-xs py-2 rounded-lg uppercase transition hover:bg-red-50 hover:text-red-600">Deny</button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </section>

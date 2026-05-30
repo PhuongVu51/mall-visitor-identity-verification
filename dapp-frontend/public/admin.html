@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Admin Identity Review Mockup</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap");
+
+    * {
+      font-family: "Inter", sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(227, 6, 19, 0.14), transparent 32%),
+        radial-gradient(circle at 95% 100%, rgba(227, 6, 19, 0.22), transparent 34%),
+        linear-gradient(135deg, #fff8f6 0%, #fffdfc 48%, #fff0ee 100%);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-[#151515]">
+  <main class="relative min-h-screen overflow-hidden">
+    <!-- Background layers -->
+    <div class="pointer-events-none absolute -left-44 -top-44 z-0 h-[460px] w-[460px] rounded-full bg-[#E30613]/15 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-48 -right-40 z-0 h-[560px] w-[560px] rounded-full bg-[#E30613]/20 blur-3xl"></div>
+    <div class="pointer-events-none absolute right-[8%] top-28 z-0 hidden h-44 w-44 rotate-12 rounded-[3.5rem] bg-[#E30613]/10 lg:block"></div>
+
+    <section class="relative z-10 mx-auto max-w-[1180px] px-8 py-10">
+      <!-- Header -->
+      <header class="mb-8 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <div class="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1.3rem] bg-white shadow-xl shadow-red-100">
+            <img src="lotte%20mall.png" alt="Lotte Mall" class="h-full w-full object-cover" />
+          </div>
+
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.42em] text-[#E30613]">
+              Lotte Mall West Lake
+            </p>
+            <h1 class="text-2xl font-black tracking-tight">
+              Lotte Mall Admin Portal
+            </h1>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button class="rounded-full border border-red-100 bg-white/90 px-5 py-3 text-sm font-black shadow-sm">
+            Audit Log
+          </button>
+
+          <button class="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200">
+            Admin · 0xad91...7f22
+          </button>
+
+          <button class="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm">
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <!-- Hero -->
+      <section class="mb-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+        <div>
+          <div class="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm">
+            <span class="h-3 w-3 rounded-full bg-[#E30613]"></span>
+            Lotte Mall Admin
+          </div>
+
+          <h2 class="max-w-[600px] text-6xl font-black leading-[0.92] tracking-[-0.07em]">
+            Review and approve
+            <span class="text-[#E30613]"> visitor identity.</span>
+          </h2>
+
+          <p class="mt-6 max-w-[520px] text-lg font-semibold leading-8 text-neutral-600">
+            Admin reviews the submitted DID request, proof reference, and event access purpose before updating identity status.
+          </p>
+        </div>
+
+        <div class="rounded-[2.5rem] border border-red-100 bg-white/90 p-7 shadow-2xl shadow-red-100">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">
+            Admin System Message
+          </p>
+
+          <p class="mt-3 text-base font-black text-green-700">
+            Admin wallet connected. Ready to review pending identity requests.
+          </p>
+
+          <div class="mt-5 rounded-[1.7rem] bg-[#fff4f1] p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+              Connected Admin Wallet
+            </p>
+            <p class="mt-2 break-all font-mono text-sm font-black">
+              0xad91f6a83c4e57a39ac84cf72ec3e582b17937f22
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Review Area -->
+      <section class="grid gap-7 pb-10 lg:grid-cols-[0.95fr_1.05fr]">
+        <!-- Visitor Detail -->
+        <div class="rounded-[2.7rem] border border-red-100 bg-white/92 p-7 shadow-sm">
+          <div class="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+                Visitor Identity Detail
+              </p>
+              <h2 class="mt-3 text-4xl font-black tracking-tight">
+                Submitted request.
+              </h2>
+            </div>
+
+            <span class="rounded-full bg-yellow-100 px-5 py-3 text-sm font-black text-yellow-700">
+              Pending Review
+            </span>
+          </div>
+
+          <div class="mt-7 grid gap-4 md:grid-cols-2">
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Visitor Name
+              </p>
+              <p class="mt-2 text-base font-black">
+                Nguyen Minh Anh
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Date of Birth
+              </p>
+              <p class="mt-2 text-base font-black">
+                15/08/2003
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Phone
+              </p>
+              <p class="mt-2 text-base font-black">
+                09xx xxx 128
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Email
+              </p>
+              <p class="mt-2 text-base font-black">
+                minhanh.demo@example.com
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 space-y-4">
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Visitor DID
+              </p>
+              <p class="mt-2 break-all font-mono text-sm font-black">
+                did:lotte:0xcd2fae72c4e57a39ac84cf72ec3e582b17930b2d
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Wallet Address
+              </p>
+              <p class="mt-2 break-all font-mono text-sm font-black">
+                0xcd2fae72c4e57a39ac84cf72ec3e582b17930b2d
+              </p>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Request ID
+                </p>
+                <p class="mt-2 font-mono text-sm font-black">
+                  REQ-20260529-017
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Event Reference
+                </p>
+                <p class="mt-2 text-sm font-black">
+                  Lotte Beauty Workshop 2026
+                </p>
+              </div>
+            </div>
+
+            <div class="grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Proof File
+                </p>
+                <p class="mt-2 text-sm font-black">
+                  visitor-proof-demo.png
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Request Purpose
+                </p>
+                <p class="mt-2 text-sm font-black">
+                  Event check-in approval
+                </p>
+              </div>
+            </div>
+
+            <div class="rounded-[1.7rem] border border-dashed border-red-100 bg-[#fffaf8] p-4">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+                    IPFS Proof Reference
+                  </p>
+                  <p class="mt-2 break-all font-mono text-xs font-black">
+                    QmX7c91b4f89c2ab8e0d2e1f3f7a9d04b6f2c8a91
+                  </p>
+                </div>
+
+                <button class="rounded-2xl border border-red-100 bg-white px-5 py-3 text-xs font-black text-[#E30613] shadow-sm">
+                  View IPFS Proof
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Verification Status -->
+        <div class="rounded-[2.7rem] border border-red-100 bg-white/92 p-7 shadow-sm">
+          <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+            Verification Status
+          </p>
+
+          <h2 class="mt-3 text-4xl font-black tracking-tight">
+            Status lookup.
+          </h2>
+
+          <div class="mt-7 grid gap-3 md:grid-cols-[1fr_auto]">
+            <input
+              value="0xcd2fae72c4e57a39ac84cf72ec3e582b17930b2d"
+              class="rounded-2xl border border-red-100 bg-[#fffaf8] px-5 py-4 font-mono text-sm font-black outline-none"
+            />
+
+            <button class="rounded-2xl bg-[#E30613] px-7 py-4 text-sm font-black text-white shadow-xl shadow-red-200">
+              Look up
+            </button>
+          </div>
+
+          <div class="mt-7 rounded-[2rem] border border-red-50 bg-[#fffaf8] p-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.24em] text-neutral-400">
+                  Current Status
+                </p>
+                <p class="mt-2 text-4xl font-black text-yellow-700">
+                  Pending Review
+                </p>
+              </div>
+
+              <span class="rounded-full bg-yellow-100 px-5 py-3 text-sm font-black text-yellow-700">
+                Waiting for admin decision
+              </span>
+            </div>
+
+            <div class="mt-6 space-y-4">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Request ID
+                </p>
+                <p class="mt-2 font-mono text-sm font-black">
+                  REQ-20260529-017
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Identity Hash
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  0xc59bbc84f6d64b6a9c91c7d90d3e75cc8
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  IPFS CID
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  QmX7c91b4f89c2ab8e0d2e1f3f7a9d04b6f2c8a91
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Submitted At
+                </p>
+                <p class="mt-2 text-sm font-black">
+                  29 May 2026, 10:24 AM
+                </p>
+              </div>
+
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Admin Wallet
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  0xad91...7f22
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-7 rounded-[2rem] border border-red-100 bg-white p-6">
+            <p class="text-xs font-black uppercase tracking-[0.28em] text-neutral-400">
+              Admin Decision
+            </p>
+
+            <div class="mt-5 grid gap-3 md:grid-cols-2">
+              <button class="rounded-2xl bg-green-600 px-5 py-4 text-sm font-black text-white shadow-lg shadow-green-100">
+                Approve Identity
+              </button>
+
+              <button class="rounded-2xl bg-[#E30613] px-5 py-4 text-sm font-black text-white shadow-xl shadow-red-200">
+                Reject Request
+              </button>
+            </div>
+
+            <button class="mt-3 w-full rounded-2xl border border-neutral-200 bg-neutral-100 px-5 py-4 text-sm font-black text-neutral-500">
+              Flag for Review
+            </button>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

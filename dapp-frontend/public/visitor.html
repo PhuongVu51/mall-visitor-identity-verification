@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visitor Identity Request Detail</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap");
+
+    * {
+      font-family: "Inter", sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(227, 6, 19, 0.14), transparent 32%),
+        radial-gradient(circle at 95% 100%, rgba(227, 6, 19, 0.22), transparent 34%),
+        linear-gradient(135deg, #fff8f6 0%, #fffdfc 48%, #fff0ee 100%);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-[#151515]">
+  <main class="relative min-h-screen overflow-hidden">
+    <div class="pointer-events-none absolute -left-44 -top-44 z-0 h-[460px] w-[460px] rounded-full bg-[#E30613]/15 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-48 -right-40 z-0 h-[560px] w-[560px] rounded-full bg-[#E30613]/20 blur-3xl"></div>
+
+    <section class="relative z-10 mx-auto max-w-[1180px] px-8 py-10">
+      <!-- Compact Figure Header -->
+      <div class="mb-7 flex flex-wrap items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+          <div class="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1.3rem] bg-white shadow-xl shadow-red-100">
+            <img src="lotte%20mall.png" alt="Lotte Mall" class="h-full w-full object-cover" />
+          </div>
+
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.42em] text-[#E30613]">
+              Lotte Mall West Lake
+            </p>
+            <h1 class="text-2xl font-black tracking-tight">
+              Visitor Identity Request
+            </h1>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <span class="rounded-full bg-yellow-100 px-5 py-3 text-sm font-black text-yellow-700">
+            Pending Review
+          </span>
+
+          <span class="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200">
+            0xcd2f...0b2d
+          </span>
+        </div>
+      </div>
+
+      <!-- Main Compact Evidence Panel -->
+      <section class="rounded-[2.8rem] border border-red-100 bg-white/92 p-7 shadow-2xl shadow-red-100">
+        <div class="grid gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <!-- Left: Visitor + Event Context -->
+          <div class="rounded-[2.2rem] border border-red-50 bg-white p-6 shadow-sm">
+            <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+              Identity Request
+            </p>
+
+            <h2 class="mt-3 text-4xl font-black tracking-tight">
+              Visitor profile.
+            </h2>
+
+            <div class="mt-6 grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Visitor Name
+                </p>
+                <p class="mt-2 text-base font-black">
+                  Nguyen Minh Anh
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Date of Birth
+                </p>
+                <p class="mt-2 text-base font-black">
+                  15/08/2003
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Phone
+                </p>
+                <p class="mt-2 text-base font-black">
+                  09xx xxx 128
+                </p>
+              </div>
+
+              <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Email
+                </p>
+                <p class="mt-2 text-base font-black">
+                  minhanh.demo@example.com
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-5 grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl bg-[#fff4f1] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+                  Request ID
+                </p>
+                <p class="mt-2 text-base font-black">
+                  REQ-20260529-017
+                </p>
+              </div>
+
+              <div class="rounded-2xl bg-[#fff4f1] p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+                  Event Reference
+                </p>
+                <p class="mt-2 text-base font-black">
+                  Lotte Beauty Workshop 2026
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-5 rounded-[1.7rem] border border-dashed border-red-100 bg-[#fffaf8] p-5">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+                Privacy Note
+              </p>
+              <p class="mt-2 text-sm font-semibold leading-7 text-neutral-600">
+                Raw visitor data is used only for identity proof generation. Merchant / Service Desk users can verify access status but cannot view this profile.
+              </p>
+            </div>
+          </div>
+
+          <!-- Right: DID + Proof Evidence -->
+          <div class="rounded-[2.2rem] border border-red-50 bg-white p-6 shadow-sm">
+            <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+              Proof and Submission
+            </p>
+
+            <h2 class="mt-3 text-4xl font-black tracking-tight">
+              Hash + IPFS.
+            </h2>
+
+            <div class="mt-6 rounded-[1.8rem] border border-neutral-100 bg-[#fffaf8] p-5">
+              <div class="grid gap-5 md:grid-cols-2">
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    Submission
+                  </p>
+                  <p class="mt-2 text-base font-black text-yellow-700">
+                    Submitted
+                  </p>
+                </div>
+
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    Verification
+                  </p>
+                  <p class="mt-2 text-base font-black text-yellow-700">
+                    Pending Review
+                  </p>
+                </div>
+
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    Proof File
+                  </p>
+                  <p class="mt-2 text-base font-black">
+                    visitor-proof-demo.png
+                  </p>
+                </div>
+
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    Raw PII
+                  </p>
+                  <p class="mt-2 text-base font-black">
+                    Off-chain
+                  </p>
+                </div>
+
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    Hash
+                  </p>
+                  <p class="mt-2 text-base font-black text-green-700">
+                    Generated
+                  </p>
+                </div>
+
+                <div>
+                  <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                    CID
+                  </p>
+                  <p class="mt-2 text-base font-black text-green-700">
+                    Generated
+                  </p>
+                </div>
+              </div>
+
+              <div class="mt-5">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Visitor DID
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  did:lotte:0xcd2fae72c4e57a39ac84cf72ec3e582b17930b2d
+                </p>
+              </div>
+
+              <div class="mt-5">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Identity Hash
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  0xc59bbc84f6d64b6a9c91c7d90d3e75cc8
+                </p>
+              </div>
+
+              <div class="mt-5">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  IPFS CID
+                </p>
+                <p class="mt-2 break-all font-mono text-sm font-black">
+                  QmX7c91b4f89c2ab8e0d2e1f3f7a9d04b6f2c8a91
+                </p>
+              </div>
+
+              <div class="mt-5">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                  Submitted At
+                </p>
+                <p class="mt-2 text-sm font-black">
+                  29 May 2026, 10:24 AM
+                </p>
+              </div>
+            </div>
+
+            <div class="mt-6 grid gap-3 md:grid-cols-2">
+              <button class="rounded-2xl border border-red-100 bg-white px-5 py-4 text-sm font-black text-[#E30613] shadow-sm">
+                View Hash
+              </button>
+
+              <button class="rounded-2xl bg-[#111] px-5 py-4 text-sm font-black text-white shadow-md">
+                View Request
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Status Strip -->
+      <section class="mt-7 grid gap-5 rounded-[2.5rem] border border-red-100 bg-white/90 p-6 shadow-xl shadow-red-50 lg:grid-cols-4">
+        <div class="rounded-[2rem] border border-yellow-100 bg-yellow-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-yellow-700">
+            Status
+          </p>
+          <p class="mt-3 text-2xl font-black text-yellow-800">
+            Pending Review
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-green-100 bg-green-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-green-700">
+            Proof
+          </p>
+          <p class="mt-3 text-2xl font-black text-green-800">
+            CID Generated
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-blue-100 bg-blue-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-blue-700">
+            Access
+          </p>
+          <p class="mt-3 text-2xl font-black text-blue-800">
+            Not Ready
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-red-100 bg-[#fff4f1] p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-[#E30613]">
+            Next Step
+          </p>
+          <p class="mt-3 text-2xl font-black">
+            Admin Review
+          </p>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>

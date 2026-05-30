@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Visitor Event Desk Permission Mockup</title>
+
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    @import url("https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800;900&display=swap");
+
+    * {
+      font-family: "Inter", sans-serif;
+    }
+
+    body {
+      background:
+        radial-gradient(circle at 0% 0%, rgba(227, 6, 19, 0.14), transparent 32%),
+        radial-gradient(circle at 95% 100%, rgba(227, 6, 19, 0.22), transparent 34%),
+        linear-gradient(135deg, #fff8f6 0%, #fffdfc 48%, #fff0ee 100%);
+    }
+  </style>
+</head>
+
+<body class="min-h-screen text-[#151515]">
+  <main class="relative min-h-screen overflow-hidden">
+    <!-- Background layers -->
+    <div class="pointer-events-none absolute -left-44 -top-44 z-0 h-[460px] w-[460px] rounded-full bg-[#E30613]/15 blur-3xl"></div>
+    <div class="pointer-events-none absolute -bottom-48 -right-40 z-0 h-[560px] w-[560px] rounded-full bg-[#E30613]/20 blur-3xl"></div>
+    <div class="pointer-events-none absolute right-[8%] top-28 z-0 hidden h-44 w-44 rotate-12 rounded-[3.5rem] bg-[#E30613]/10 lg:block"></div>
+
+    <section class="relative z-10 mx-auto max-w-[1180px] px-8 py-10">
+      <!-- Header -->
+      <header class="mb-8 flex items-center justify-between">
+        <div class="flex items-center gap-4">
+          <div class="flex h-14 w-14 items-center justify-center overflow-hidden rounded-[1.3rem] bg-white shadow-xl shadow-red-100">
+            <img src="lotte%20mall.png" alt="Lotte Mall" class="h-full w-full object-cover" />
+          </div>
+
+          <div>
+            <p class="text-xs font-black uppercase tracking-[0.42em] text-[#E30613]">
+              Lotte Mall West Lake
+            </p>
+            <h1 class="text-2xl font-black tracking-tight">
+              Visitor DID Wallet
+            </h1>
+          </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+          <button class="rounded-full border border-red-100 bg-white/90 px-5 py-3 text-sm font-black shadow-sm">
+            Check My DID
+          </button>
+
+          <button class="rounded-full border border-red-100 bg-white/90 px-5 py-3 text-sm font-black shadow-sm">
+            Audit Log
+          </button>
+
+          <button class="rounded-full bg-[#E30613] px-5 py-3 text-sm font-black text-white shadow-xl shadow-red-200">
+            0xcd2f...0b2d
+          </button>
+
+          <button class="rounded-full border border-neutral-200 bg-neutral-100 px-5 py-3 text-sm font-black text-neutral-500 shadow-sm">
+            Logout
+          </button>
+        </div>
+      </header>
+
+      <!-- Hero -->
+      <section class="mb-8 grid gap-6 lg:grid-cols-[0.85fr_1.15fr] lg:items-center">
+        <div>
+          <div class="mb-6 inline-flex items-center gap-3 rounded-full border border-red-100 bg-white/85 px-5 py-3 text-sm font-black text-[#E30613] shadow-sm">
+            <span class="h-3 w-3 rounded-full bg-[#E30613]"></span>
+            Visitor Permission Control
+          </div>
+
+          <h2 class="max-w-[610px] text-6xl font-black leading-[0.92] tracking-[-0.07em]">
+            Grant event desk
+            <span class="text-[#E30613]"> check-in access.</span>
+          </h2>
+
+          <p class="mt-6 max-w-[520px] text-lg font-semibold leading-8 text-neutral-600">
+            After admin approval, the visitor grants permission to the selected event desk and generates a temporary PIN for verification.
+          </p>
+        </div>
+
+        <div class="rounded-[2.5rem] border border-green-100 bg-green-50/80 p-7 shadow-2xl shadow-green-100">
+          <p class="text-xs font-black uppercase tracking-[0.28em] text-green-700">
+            Identity Status
+          </p>
+
+          <div class="mt-4 flex flex-wrap items-start justify-between gap-5">
+            <div>
+              <h3 class="text-4xl font-black text-green-800">
+                Verified
+              </h3>
+              <p class="mt-3 text-base font-bold leading-7 text-green-800/80">
+                Admin approved this DID. The visitor can now create an event check-in request.
+              </p>
+            </div>
+
+            <span class="rounded-full bg-green-600 px-5 py-3 text-sm font-black text-white shadow-lg shadow-green-100">
+              Ready
+            </span>
+          </div>
+
+          <div class="mt-6 rounded-[1.7rem] bg-white p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+              Visitor DID
+            </p>
+            <p class="mt-2 break-all font-mono text-sm font-black">
+              did:lotte:0xcd2fae72c4e57a39ac84cf72ec3e582b17930b2d
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Main Permission Panel -->
+      <section class="grid gap-7 pb-10 lg:grid-cols-[0.95fr_1.05fr]">
+        <!-- Left: Permission Setup -->
+        <div class="rounded-[2.7rem] border border-red-100 bg-white/92 p-7 shadow-sm">
+          <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+            Event Permission
+          </p>
+
+          <h2 class="mt-3 text-4xl font-black tracking-tight">
+            Create check-in request.
+          </h2>
+
+          <div class="mt-7 grid gap-4 md:grid-cols-2">
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Event
+              </p>
+              <p class="mt-2 text-base font-black">
+                Lotte Beauty Workshop 2026
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Event Desk
+              </p>
+              <p class="mt-2 text-base font-black">
+                Beauty Workshop Desk A1
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Permission
+              </p>
+              <p class="mt-2 text-base font-black text-green-700">
+                Granted
+              </p>
+            </div>
+
+            <div class="rounded-2xl border border-neutral-100 bg-[#fffaf8] p-4">
+              <p class="text-xs font-black uppercase tracking-[0.22em] text-neutral-400">
+                Request ID
+              </p>
+              <p class="mt-2 font-mono text-sm font-black">
+                CHK-20260529-084
+              </p>
+            </div>
+          </div>
+
+          <div class="mt-5 rounded-[1.8rem] border border-green-100 bg-green-50 p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-green-700">
+              Permission Transaction
+            </p>
+            <p class="mt-2 text-base font-black text-green-800">
+              setMerchantPermission(eventDeskA1, true)
+            </p>
+            <p class="mt-2 break-all font-mono text-xs font-bold text-green-800/80">
+              Tx Hash: 0x2d3e4f5a6b7c8d9e01f2a3b4c5d6e7f8...
+            </p>
+          </div>
+
+          <div class="mt-5 rounded-[1.7rem] border border-dashed border-red-100 bg-[#fffaf8] p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-[#E30613]">
+              Privacy Rule
+            </p>
+            <p class="mt-2 text-sm font-semibold leading-7 text-neutral-600">
+              The event desk receives permission to verify status only. Raw visitor profile fields remain hidden.
+            </p>
+          </div>
+        </div>
+
+        <!-- Right: PIN Generation -->
+        <div class="rounded-[2.7rem] border border-red-100 bg-white/92 p-7 shadow-sm">
+          <p class="text-sm font-black uppercase tracking-[0.32em] text-[#E30613]">
+            Temporary PIN
+          </p>
+
+          <h2 class="mt-3 text-4xl font-black tracking-tight">
+            Check-in PIN generated.
+          </h2>
+
+          <div class="mt-7 rounded-[2.2rem] border border-red-100 bg-gradient-to-br from-[#E30613] via-[#c9000f] to-[#760006] p-7 text-white shadow-xl shadow-red-100">
+            <div class="flex flex-wrap items-start justify-between gap-5">
+              <div>
+                <p class="text-xs font-black uppercase tracking-[0.32em] text-white/55">
+                  Active PIN
+                </p>
+                <h3 class="mt-3 text-6xl font-black tracking-tight">
+                  4826
+                </h3>
+              </div>
+
+              <span class="rounded-full bg-white/15 px-5 py-3 text-sm font-black text-yellow-100">
+                Active
+              </span>
+            </div>
+
+            <div class="mt-7 grid gap-4 md:grid-cols-2">
+              <div class="rounded-2xl bg-white/10 p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Valid For
+                </p>
+                <p class="mt-2 text-base font-black">
+                  Beauty Workshop Desk A1
+                </p>
+              </div>
+
+              <div class="rounded-2xl bg-white/10 p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Expires At
+                </p>
+                <p class="mt-2 text-base font-black">
+                  29 May 2026, 11:00 AM
+                </p>
+              </div>
+
+              <div class="rounded-2xl bg-white/10 p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Linked DID
+                </p>
+                <p class="mt-2 break-all font-mono text-xs font-black">
+                  did:lotte:0xcd2f...0b2d
+                </p>
+              </div>
+
+              <div class="rounded-2xl bg-white/10 p-4">
+                <p class="text-xs font-black uppercase tracking-[0.22em] text-white/45">
+                  Access State
+                </p>
+                <p class="mt-2 text-base font-black">
+                  Ready for verification
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <div class="mt-6 grid gap-3 md:grid-cols-2">
+            <button class="rounded-2xl bg-[#111] px-5 py-4 text-sm font-black text-white shadow-md">
+              Copy PIN
+            </button>
+
+            <button class="rounded-2xl border border-red-100 bg-white px-5 py-4 text-sm font-black text-[#E30613] shadow-sm">
+              Regenerate PIN
+            </button>
+          </div>
+
+          <div class="mt-5 rounded-[1.8rem] border border-blue-100 bg-blue-50 p-5">
+            <p class="text-xs font-black uppercase tracking-[0.22em] text-blue-700">
+              Next Step
+            </p>
+            <p class="mt-2 text-base font-black text-blue-800">
+              Show DID and PIN to the Event Desk for access verification.
+            </p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Bottom Evidence Strip -->
+      <section class="grid gap-5 rounded-[2.5rem] border border-red-100 bg-white/90 p-6 shadow-xl shadow-red-50 lg:grid-cols-4">
+        <div class="rounded-[2rem] border border-green-100 bg-green-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-green-700">
+            Identity
+          </p>
+          <p class="mt-3 text-2xl font-black text-green-800">
+            Verified
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-green-100 bg-green-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-green-700">
+            Permission
+          </p>
+          <p class="mt-3 text-2xl font-black text-green-800">
+            Granted
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-blue-100 bg-blue-50 p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-blue-700">
+            PIN
+          </p>
+          <p class="mt-3 text-2xl font-black text-blue-800">
+            Active
+          </p>
+        </div>
+
+        <div class="rounded-[2rem] border border-red-100 bg-[#fff4f1] p-5">
+          <p class="text-xs font-black uppercase tracking-[0.25em] text-[#E30613]">
+            Merchant View
+          </p>
+          <p class="mt-3 text-2xl font-black">
+            PII Hidden
+          </p>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
